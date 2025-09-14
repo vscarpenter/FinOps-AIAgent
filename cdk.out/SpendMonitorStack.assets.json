@@ -1,0 +1,36 @@
+{
+  "version": "48.0.0",
+  "files": {
+    "20c6e518897152edcc4eafbbd322906f52e24272f4df9ce078a1d4b690d5dd86": {
+      "displayName": "SpendMonitorAgent/Code",
+      "source": {
+        "path": "asset.20c6e518897152edcc4eafbbd322906f52e24272f4df9ce078a1d4b690d5dd86",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "710603110067-us-east-1-e14247c3": {
+          "bucketName": "cdk-hnb659fds-assets-710603110067-us-east-1",
+          "objectKey": "20c6e518897152edcc4eafbbd322906f52e24272f4df9ce078a1d4b690d5dd86.zip",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::710603110067:role/cdk-hnb659fds-file-publishing-role-710603110067-us-east-1"
+        }
+      }
+    },
+    "9dd7e0b17d3959c3221dc907d8877977086dff71c5a06b734138e0b2a062fae8": {
+      "displayName": "SpendMonitorStack Template",
+      "source": {
+        "path": "SpendMonitorStack.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "710603110067-us-east-1-a11845b0": {
+          "bucketName": "cdk-hnb659fds-assets-710603110067-us-east-1",
+          "objectKey": "9dd7e0b17d3959c3221dc907d8877977086dff71c5a06b734138e0b2a062fae8.json",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::710603110067:role/cdk-hnb659fds-file-publishing-role-710603110067-us-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}
