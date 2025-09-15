@@ -1,0 +1,32 @@
+name: Bug report
+description: File a bug report
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of the problem.
+      placeholder: What happened? What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Steps to reproduce the behavior.
+      placeholder: 1) command 2) config 3) result
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `node -v` and project version.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant logs (use `src/utils/logger.ts` for runtime logs).
+      render: shell
+

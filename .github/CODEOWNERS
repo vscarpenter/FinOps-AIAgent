@@ -1,0 +1,9 @@
+# Default owners
+* @vinnycarpenter
+
+# Critical paths (example granularity; adjust as needed)
+src/infrastructure.ts @vinnycarpenter
+scripts/ @vinnycarpenter
+types/ @vinnycarpenter
+tools/ @vinnycarpenter
+
