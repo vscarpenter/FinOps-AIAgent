@@ -22,7 +22,8 @@
     "validate:deployment": "./scripts/validate-deployment.sh",
     "validate:all": "npm run validate:config && npm run validate:pre-deploy",
     "lint": "eslint src/**/*.ts",
-    "clean": "rm -rf dist coverage"
+    "clean": "rm -rf dist coverage",
+    "diagram:build": "npx -p @mermaid-js/mermaid-cli mmdc -i docs/architecture.mmd -o docs/architecture.png -b transparent -t forest"
   },
   "dependencies": {
     "@aws-sdk/client-cloudwatch": "^3.888.0",

@@ -1,0 +1,25 @@
+%% Architecture diagram for AWS Spend Monitor Agent
+%% Render with: npm run diagram:build
+
+graph TD;
+  EB[EventBridge cron] --> L[Lambda SpendMonitorAgent]
+  L --> CA[CostAnalysisTool]
+  CA --> CE[AWS Cost Explorer]
+  L --> TH[Compare vs Threshold]
+  TH -->|below| OK[No alert]
+  TH -->|exceeded| ALT[AlertTool]
+  ALT --> SNS[Alerts SNS Topic]
+  ALT --> APNS[SNS Platform App APNS]
+  L --> CWM[CloudWatch Metrics]
+  L --> CWL[CloudWatch Logs]
+  CWM --> ALR[CloudWatch Alarms]
+  ALR --> OPS[Ops SNS Topic]
+
+  subgraph Device Registration
+    API[API Gateway devices] --> DRL[Lambda device registration]
+    DRL --> DDB[DynamoDB device tokens]
+    DRL --> APNS
+  end
+
+  APNS --> IOS[iOS Devices]
+  SNS --> SUBS[Email SMS Subscribers]
