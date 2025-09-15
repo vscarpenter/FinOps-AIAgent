@@ -1,0 +1,15 @@
+{
+  "spendThreshold": 25,
+  "snsTopicArn": "arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts",
+  "region": "us-east-1",
+  "checkPeriodDays": 1,
+  "retryAttempts": 3,
+  "minServiceCostThreshold": 1,
+  "iosConfig": {
+    "platformApplicationArn": "arn:aws:sns:us-east-1:123456789012:app/APNS/SpendMonitorApp",
+    "bundleId": "com.example.spendmonitor",
+    "sandbox": true,
+    "apnsCertificatePath": "/path/to/apns-cert.pem",
+    "apnsPrivateKeyPath": "/path/to/apns-key.pem"
+  }
+}

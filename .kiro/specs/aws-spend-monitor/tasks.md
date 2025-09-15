@@ -97,7 +97,7 @@
   - Write tests for all error scenarios and recovery mechanisms
   - _Requirements: 1.2, 1.3, 2.4, 4.3, 8.4_
 
-- [ ] 12. Create end-to-end integration tests
+- [x] 12. Create end-to-end integration tests
   - Write integration tests using real AWS services in test environment
   - Create test scenarios for under-threshold, over-threshold, and edge cases
   - Implement test data setup and cleanup for Cost Explorer API testing
@@ -105,7 +105,7 @@
   - Create performance tests for Lambda execution duration
   - _Requirements: 1.1, 2.1, 3.1, 5.1_
 
-- [ ] 13. Create iOS device registration API (Optional)
+- [x] 13. Create iOS device registration API (Optional)
   - Create API Gateway REST API for device token registration
   - Implement Lambda function for device registration endpoint
   - Add authentication and rate limiting for registration API
@@ -114,7 +114,7 @@
   - Write unit tests for API endpoints and device management
   - _Requirements: 7.3, 7.4_
 
-- [ ] 14. Implement iOS notification testing and validation
+- [x] 14. Implement iOS notification testing and validation
   - Create test utilities for APNS payload validation
   - Add integration tests for iOS push notification delivery
   - Implement test device registration and notification scenarios
@@ -123,7 +123,7 @@
   - Write performance tests for iOS notification processing
   - _Requirements: 6.5, 6.6, 6.9, 7.5_
 
-- [ ] 15. Add iOS-specific monitoring and error handling
+- [x] 15. Add iOS-specific monitoring and error handling
   - Implement APNS feedback service processing for invalid tokens
   - Add CloudWatch metrics for iOS notification success/failure rates
   - Create alarms for APNS certificate expiration warnings
@@ -132,7 +132,7 @@
   - Write tests for iOS-specific error scenarios and recovery
   - _Requirements: 6.8, 7.5, 7.7_
 
-- [ ] 16. Create iOS setup documentation and scripts
+- [x] 16. Create iOS setup documentation and scripts
   - Create step-by-step guide for Apple Developer account setup
   - Add APNS certificate generation and configuration instructions
   - Create scripts for SNS platform application setup
@@ -141,7 +141,7 @@
   - Write deployment validation for iOS configuration
   - _Requirements: 6.9, 7.1, 7.2_
 
-- [ ] 17. Add configuration validation and deployment scripts
+- [x] 17. Add configuration validation and deployment scripts
   - Create deployment validation script to check IAM permissions including iOS
   - Add configuration validation for SNS topic ARN, threshold values, and iOS settings
   - Implement pre-deployment checks for required AWS services and APNS certificates

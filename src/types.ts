@@ -168,3 +168,146 @@ export interface TestCostData {
     singleService: CostAnalysis;
   };
 }
+
+/**
+ * API request/response types for device registration
+ */
+
+/**
+ * Request to register a new iOS device
+ */
+export interface DeviceRegistrationRequest {
+  /** APNS device token (64-character hex string) */
+  deviceToken: string;
+  /** Optional user identifier */
+  userId?: string;
+  /** iOS app bundle identifier */
+  bundleId: string;
+}
+
+/**
+ * Response from device registration
+ */
+export interface DeviceRegistrationResponse {
+  /** Registration success status */
+  success: boolean;
+  /** SNS platform endpoint ARN if successful */
+  platformEndpointArn?: string;
+  /** Error message if failed */
+  error?: string;
+  /** Registration timestamp */
+  registrationDate: string;
+}
+
+/**
+ * Request to update device token
+ */
+export interface DeviceUpdateRequest {
+  /** Current device token */
+  currentToken: string;
+  /** New device token */
+  newToken: string;
+  /** Optional user identifier */
+  userId?: string;
+}
+
+/**
+ * Response from device update
+ */
+export interface DeviceUpdateResponse {
+  /** Update success status */
+  success: boolean;
+  /** Updated platform endpoint ARN if successful */
+  platformEndpointArn?: string;
+  /** Error message if failed */
+  error?: string;
+  /** Update timestamp */
+  lastUpdated: string;
+}
+
+/**
+ * Request to list user devices
+ */
+export interface DeviceListRequest {
+  /** User identifier */
+  userId: string;
+  /** Optional pagination token */
+  nextToken?: string;
+  /** Maximum number of devices to return */
+  limit?: number;
+}
+
+/**
+ * Response from device list
+ */
+export interface DeviceListResponse {
+  /** List success status */
+  success: boolean;
+  /** Array of registered devices */
+  devices?: iOSDeviceRegistration[];
+  /** Pagination token for next page */
+  nextToken?: string;
+  /** Error message if failed */
+  error?: string;
+}
+
+/**
+ * Request to delete a device registration
+ */
+export interface DeviceDeleteRequest {
+  /** Device token to delete */
+  deviceToken: string;
+  /** Optional user identifier for authorization */
+  userId?: string;
+}
+
+/**
+ * Response from device deletion
+ */
+export interface DeviceDeleteResponse {
+  /** Deletion success status */
+  success: boolean;
+  /** Error message if failed */
+  error?: string;
+  /** Deletion timestamp */
+  deletedAt: string;
+}
+
+/**
+ * API Gateway Lambda event context
+ */
+export interface APIGatewayEvent {
+  /** HTTP method */
+  httpMethod: string;
+  /** Request path */
+  path: string;
+  /** Path parameters */
+  pathParameters: { [key: string]: string } | null;
+  /** Query string parameters */
+  queryStringParameters: { [key: string]: string } | null;
+  /** Request headers */
+  headers: { [key: string]: string };
+  /** Request body */
+  body: string | null;
+  /** Request context */
+  requestContext: {
+    /** Request ID */
+    requestId: string;
+    /** Source IP */
+    identity: {
+      sourceIp: string;
+    };
+  };
+}
+
+/**
+ * API Gateway Lambda response
+ */
+export interface APIGatewayResponse {
+  /** HTTP status code */
+  statusCode: number;
+  /** Response headers */
+  headers: { [key: string]: string };
+  /** Response body (JSON string) */
+  body: string;
+}

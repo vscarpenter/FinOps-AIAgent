@@ -8,6 +8,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import { Construct } from 'constructs';
 
 export class SpendMonitorStack extends cdk.Stack {
@@ -55,7 +56,9 @@ export class SpendMonitorStack extends cdk.Stack {
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
-      pointInTimeRecovery: true
+      pointInTimeRecoverySpecification: {
+        pointInTimeRecoveryEnabled: true
+      }
     });
 
     // Lambda function for the Strands agent
@@ -117,6 +120,154 @@ export class SpendMonitorStack extends cdk.Stack {
 
     // Grant DynamoDB permissions for device token management
     deviceTokenTable.grantReadWriteData(agentFunction);
+
+    // Device Registration API Lambda Function
+    const deviceRegistrationFunction = new lambda.Function(this, 'DeviceRegistrationFunction', {
+      runtime: lambda.Runtime.NODEJS_18_X,
+      handler: 'device-registration-index.handler',
+      code: lambda.Code.fromAsset('dist'),
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      environment: {
+        IOS_PLATFORM_APP_ARN: iosPlatformApp?.ref || '',
+        DEVICE_TOKEN_TABLE_NAME: deviceTokenTable.tableName,
+        IOS_BUNDLE_ID: this.node.tryGetContext('iosBundleId') || 'com.example.spendmonitor'
+      }
+    });
+
+    // Grant permissions for device registration function
+    deviceTokenTable.grantReadWriteData(deviceRegistrationFunction);
+
+    // Grant SNS platform application permissions for device registration
+    if (iosPlatformApp) {
+      deviceRegistrationFunction.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'sns:CreatePlatformEndpoint',
+          'sns:DeleteEndpoint',
+          'sns:GetEndpointAttributes',
+          'sns:SetEndpointAttributes',
+          'sns:ListEndpointsByPlatformApplication',
+          'sns:GetPlatformApplicationAttributes'
+        ],
+        resources: [
+          iosPlatformApp.ref,
+          `${iosPlatformApp.ref}/*`
+        ]
+      }));
+    }
+
+    // API Gateway for device registration
+    const deviceRegistrationApi = new apigateway.RestApi(this, 'DeviceRegistrationApi', {
+      restApiName: 'iOS Device Registration API',
+      description: 'API for managing iOS device registrations for spend monitor notifications',
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,
+        allowMethods: apigateway.Cors.ALL_METHODS,
+        allowHeaders: ['Content-Type', 'X-Amz-Date', 'Authorization', 'X-Api-Key', 'X-Amz-Security-Token']
+      },
+      deployOptions: {
+        stageName: 'v1',
+        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        dataTraceEnabled: true,
+        metricsEnabled: true
+      }
+    });
+
+    // Lambda integration for device registration
+    const deviceRegistrationIntegration = new apigateway.LambdaIntegration(deviceRegistrationFunction, {
+      requestTemplates: { 'application/json': '{ "statusCode": "200" }' }
+    });
+
+    // API Gateway resources and methods
+    const devicesResource = deviceRegistrationApi.root.addResource('devices');
+    
+    // POST /devices - Register new device
+    devicesResource.addMethod('POST', deviceRegistrationIntegration, {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      apiKeyRequired: true,
+      requestValidator: new apigateway.RequestValidator(this, 'DeviceRegistrationValidator', {
+        restApi: deviceRegistrationApi,
+        requestValidatorName: 'device-registration-validator',
+        validateRequestBody: true,
+        validateRequestParameters: false
+      }),
+      requestModels: {
+        'application/json': new apigateway.Model(this, 'DeviceRegistrationModel', {
+          restApi: deviceRegistrationApi,
+          modelName: 'DeviceRegistrationRequest',
+          schema: {
+            type: apigateway.JsonSchemaType.OBJECT,
+            properties: {
+              deviceToken: {
+                type: apigateway.JsonSchemaType.STRING,
+                pattern: '^[0-9a-fA-F]{64}$'
+              },
+              userId: {
+                type: apigateway.JsonSchemaType.STRING
+              },
+              bundleId: {
+                type: apigateway.JsonSchemaType.STRING
+              }
+            },
+            required: ['deviceToken']
+          }
+        })
+      }
+    });
+
+    // PUT /devices - Update device token
+    devicesResource.addMethod('PUT', deviceRegistrationIntegration, {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      apiKeyRequired: true
+    });
+
+    // GET /devices - List user devices
+    devicesResource.addMethod('GET', deviceRegistrationIntegration, {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      apiKeyRequired: true,
+      requestParameters: {
+        'method.request.querystring.userId': true,
+        'method.request.querystring.limit': false,
+        'method.request.querystring.nextToken': false
+      }
+    });
+
+    // DELETE /devices/{deviceToken} - Delete device registration
+    const deviceTokenResource = devicesResource.addResource('{deviceToken}');
+    deviceTokenResource.addMethod('DELETE', deviceRegistrationIntegration, {
+      authorizationType: apigateway.AuthorizationType.NONE,
+      apiKeyRequired: true,
+      requestParameters: {
+        'method.request.path.deviceToken': true
+      }
+    });
+
+    // API Key for rate limiting and access control
+    const apiKey = new apigateway.ApiKey(this, 'DeviceRegistrationApiKey', {
+      apiKeyName: 'spend-monitor-device-registration-key',
+      description: 'API key for iOS device registration endpoints'
+    });
+
+    // Usage plan for rate limiting
+    const usagePlan = new apigateway.UsagePlan(this, 'DeviceRegistrationUsagePlan', {
+      name: 'device-registration-usage-plan',
+      description: 'Usage plan for device registration API',
+      throttle: {
+        rateLimit: 100,
+        burstLimit: 200
+      },
+      quota: {
+        limit: 10000,
+        period: apigateway.Period.DAY
+      }
+    });
+
+    usagePlan.addApiKey(apiKey);
+    usagePlan.addApiStage({
+      api: deviceRegistrationApi,
+      stage: deviceRegistrationApi.deploymentStage
+    });
 
     // Grant CloudWatch permissions for custom metrics
     agentFunction.addToRolePolicy(new iam.PolicyStatement({
@@ -217,6 +368,133 @@ export class SpendMonitorStack extends cdk.Stack {
     });
     alertDeliveryFailureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
 
+    // iOS-specific CloudWatch Alarms
+    
+    // iOS notification failure alarm
+    const iosNotificationFailureAlarm = new cloudwatch.Alarm(this, 'iOSNotificationFailureAlarm', {
+      alarmName: 'SpendMonitor-iOSNotificationFailures',
+      alarmDescription: 'Alarm for iOS push notification delivery failures',
+      metric: new cloudwatch.Metric({
+        namespace: 'SpendMonitor/iOS',
+        metricName: 'iOSNotificationCount',
+        dimensionsMap: {
+          Status: 'Failure'
+        },
+        period: cdk.Duration.minutes(5),
+        statistic: 'Sum'
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    });
+    iosNotificationFailureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+    // iOS invalid token alarm (high rate of invalid tokens)
+    const iosInvalidTokenAlarm = new cloudwatch.Alarm(this, 'iOSInvalidTokenAlarm', {
+      alarmName: 'SpendMonitor-iOSInvalidTokens',
+      alarmDescription: 'Alarm for high rate of invalid iOS device tokens',
+      metric: new cloudwatch.Metric({
+        namespace: 'SpendMonitor/iOS',
+        metricName: 'iOSInvalidTokens',
+        period: cdk.Duration.minutes(15),
+        statistic: 'Sum'
+      }),
+      threshold: 5, // Alert if more than 5 invalid tokens in 15 minutes
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    });
+    iosInvalidTokenAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+    // APNS certificate health alarm (based on validation failures)
+    const apnsCertificateHealthAlarm = new cloudwatch.Alarm(this, 'APNSCertificateHealthAlarm', {
+      alarmName: 'SpendMonitor-APNSCertificateHealth',
+      alarmDescription: 'Alarm for APNS certificate validation failures',
+      metric: new cloudwatch.Metric({
+        namespace: 'SpendMonitor/iOS',
+        metricName: 'ExecutionCount',
+        dimensionsMap: {
+          Operation: 'APNSCertificateValidation',
+          Status: 'Failure'
+        },
+        period: cdk.Duration.minutes(5),
+        statistic: 'Sum'
+      }),
+      threshold: 1,
+      evaluationPeriods: 2, // Alert after 2 consecutive failures
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    });
+    apnsCertificateHealthAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+    // APNS certificate expiration warning alarm (30 days)
+    const apnsCertificateExpirationWarningAlarm = new cloudwatch.Alarm(this, 'APNSCertificateExpirationWarningAlarm', {
+      alarmName: 'SpendMonitor-APNSCertificateExpirationWarning',
+      alarmDescription: 'Warning alarm for APNS certificate expiring within 30 days',
+      metric: new cloudwatch.Metric({
+        namespace: 'SpendMonitor/iOS',
+        metricName: 'APNSCertificateDaysUntilExpiration',
+        period: cdk.Duration.hours(6),
+        statistic: 'Minimum'
+      }),
+      threshold: 30,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    });
+    apnsCertificateExpirationWarningAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+    // APNS certificate expiration critical alarm (7 days)
+    const apnsCertificateExpirationCriticalAlarm = new cloudwatch.Alarm(this, 'APNSCertificateExpirationCriticalAlarm', {
+      alarmName: 'SpendMonitor-APNSCertificateExpirationCritical',
+      alarmDescription: 'Critical alarm for APNS certificate expiring within 7 days',
+      metric: new cloudwatch.Metric({
+        namespace: 'SpendMonitor/iOS',
+        metricName: 'APNSCertificateDaysUntilExpiration',
+        period: cdk.Duration.hours(1),
+        statistic: 'Minimum'
+      }),
+      threshold: 7,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    });
+    apnsCertificateExpirationCriticalAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+    // iOS fallback usage alarm (high fallback rate indicates iOS issues)
+    const iosFallbackUsageAlarm = new cloudwatch.Alarm(this, 'iOSFallbackUsageAlarm', {
+      alarmName: 'SpendMonitor-iOSFallbackUsage',
+      alarmDescription: 'Alarm for high iOS notification fallback usage rate',
+      metric: new cloudwatch.Metric({
+        namespace: 'SpendMonitor/iOS',
+        metricName: 'iOSFallbackUsed',
+        period: cdk.Duration.minutes(15),
+        statistic: 'Sum'
+      }),
+      threshold: 3, // Alert if fallback is used 3 times in 15 minutes
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    });
+    iosFallbackUsageAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+    // iOS device registration failure alarm
+    const iosRegistrationFailureAlarm = new cloudwatch.Alarm(this, 'iOSRegistrationFailureAlarm', {
+      alarmName: 'SpendMonitor-iOSRegistrationFailures',
+      alarmDescription: 'Alarm for iOS device registration failures',
+      metric: new cloudwatch.Metric({
+        namespace: 'SpendMonitor/iOS',
+        metricName: 'ExecutionCount',
+        dimensionsMap: {
+          Operation: 'RegisterDevice',
+          Status: 'Failure'
+        },
+        period: cdk.Duration.minutes(5),
+        statistic: 'Sum'
+      }),
+      threshold: 3, // Alert after 3 registration failures
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+    });
+    iosRegistrationFailureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
     // CloudWatch Dashboard for monitoring
     const dashboard = new cloudwatch.Dashboard(this, 'SpendMonitorDashboard', {
       dashboardName: 'SpendMonitorAgent',
@@ -278,6 +556,146 @@ export class SpendMonitorStack extends cdk.Stack {
             width: 12,
             height: 6
           })
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: 'iOS Notification Metrics',
+            left: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSNotificationCount',
+                dimensionsMap: { Status: 'Success' },
+                period: cdk.Duration.minutes(5),
+                statistic: 'Sum'
+              }),
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSNotificationCount',
+                dimensionsMap: { Status: 'Failure' },
+                period: cdk.Duration.minutes(5),
+                statistic: 'Sum'
+              })
+            ],
+            right: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSInvalidTokens',
+                period: cdk.Duration.minutes(15),
+                statistic: 'Sum'
+              })
+            ],
+            width: 12,
+            height: 6
+          })
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: 'iOS System Health Metrics',
+            left: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'ExecutionCount',
+                dimensionsMap: { 
+                  Operation: 'APNSCertificateValidation',
+                  Status: 'Success'
+                },
+                period: cdk.Duration.hours(1),
+                statistic: 'Sum'
+              }),
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'ExecutionCount',
+                dimensionsMap: { 
+                  Operation: 'APNSCertificateValidation',
+                  Status: 'Failure'
+                },
+                period: cdk.Duration.hours(1),
+                statistic: 'Sum'
+              })
+            ],
+            right: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSDeviceCount',
+                period: cdk.Duration.hours(1),
+                statistic: 'Average'
+              })
+            ],
+            width: 12,
+            height: 6
+          })
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: 'APNS Certificate Health',
+            left: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'APNSCertificateDaysUntilExpiration',
+                period: cdk.Duration.hours(6),
+                statistic: 'Minimum'
+              }),
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'APNSCertificateValid',
+                period: cdk.Duration.hours(1),
+                statistic: 'Average'
+              })
+            ],
+            right: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'APNSCertificateWarnings',
+                period: cdk.Duration.hours(1),
+                statistic: 'Sum'
+              }),
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'APNSCertificateErrors',
+                period: cdk.Duration.hours(1),
+                statistic: 'Sum'
+              })
+            ],
+            width: 12,
+            height: 6
+          })
+        ],
+        [
+          new cloudwatch.GraphWidget({
+            title: 'iOS Fallback and Error Recovery',
+            left: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSFallbackUsed',
+                dimensionsMap: { Status: 'Success' },
+                period: cdk.Duration.minutes(15),
+                statistic: 'Sum'
+              }),
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSFallbackUsed',
+                dimensionsMap: { Status: 'Failure' },
+                period: cdk.Duration.minutes(15),
+                statistic: 'Sum'
+              })
+            ],
+            right: [
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSPayloadSize',
+                period: cdk.Duration.minutes(15),
+                statistic: 'Average'
+              }),
+              new cloudwatch.Metric({
+                namespace: 'SpendMonitor/iOS',
+                metricName: 'iOSNotificationDeliveryTime',
+                period: cdk.Duration.minutes(15),
+                statistic: 'Average'
+              })
+            ],
+            width: 12,
+            height: 6
+          })
         ]
       ]
     });
@@ -318,6 +736,21 @@ export class SpendMonitorStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DashboardURL', {
       value: `https://${this.region}.console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards:name=${dashboard.dashboardName}`,
       description: 'CloudWatch Dashboard URL for monitoring'
+    });
+
+    new cdk.CfnOutput(this, 'DeviceRegistrationApiUrl', {
+      value: deviceRegistrationApi.url,
+      description: 'Device Registration API Gateway URL'
+    });
+
+    new cdk.CfnOutput(this, 'DeviceRegistrationApiKeyId', {
+      value: apiKey.keyId,
+      description: 'API Key ID for device registration (retrieve value from AWS Console)'
+    });
+
+    new cdk.CfnOutput(this, 'DeviceRegistrationFunctionName', {
+      value: deviceRegistrationFunction.functionName,
+      description: 'Lambda function name for device registration API'
     });
   }
 }

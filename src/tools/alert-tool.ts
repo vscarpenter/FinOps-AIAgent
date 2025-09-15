@@ -1,6 +1,8 @@
 import { Tool } from 'strands-agents';
 import { SNSClient, PublishCommand, PublishCommandInput } from '@aws-sdk/client-sns';
 import { CostAnalysis, AlertContext, ServiceCost, APNSPayload, RetryConfig } from '../types';
+import { createLogger } from '../utils/logger';
+import { createMetricsCollector } from '../utils/metrics';
 
 /**
  * Tool for sending multi-channel alerts via AWS SNS
@@ -8,10 +10,13 @@ import { CostAnalysis, AlertContext, ServiceCost, APNSPayload, RetryConfig } fro
 export class AlertTool extends Tool {
   private snsClient: SNSClient;
   private retryConfig: RetryConfig;
+  private alertLogger = createLogger('AlertTool');
+  private metrics = createMetricsCollector('us-east-1', 'SpendMonitor/Alerts');
 
   constructor(region: string = 'us-east-1', retryConfig?: Partial<RetryConfig>) {
     super();
     this.snsClient = new SNSClient({ region });
+    this.metrics = createMetricsCollector(region, 'SpendMonitor/Alerts');
     this.retryConfig = {
       maxAttempts: 3,
       baseDelay: 1000,
@@ -67,7 +72,7 @@ export class AlertTool extends Tool {
 
       await this.executeWithRetry(() => this.snsClient.send(new PublishCommand(publishInput)));
 
-      this.logger.info('Spend alert sent successfully', {
+      this.alertLogger.info('Spend alert sent successfully', {
         totalCost: costAnalysis.totalCost,
         threshold: alertContext.threshold,
         exceedAmount: alertContext.exceedAmount,
@@ -77,8 +82,7 @@ export class AlertTool extends Tool {
       });
 
     } catch (error) {
-      this.logger.error('Failed to send spend alert', {
-        error,
+      this.alertLogger.error('Failed to send spend alert', error as Error, {
         topicArn,
         totalCost: costAnalysis.totalCost,
         threshold: alertContext.threshold
@@ -200,7 +204,7 @@ export class AlertTool extends Tool {
         ios: isValidArn
       };
     } catch (error) {
-      this.logger.warn('Failed to validate notification channels', { error, topicArn });
+      this.alertLogger.warn('Failed to validate notification channels', { error, topicArn });
       return { email: false, sms: false, ios: false };
     }
   }
@@ -256,7 +260,7 @@ export class AlertTool extends Tool {
           this.retryConfig.maxDelay
         );
 
-        this.logger.warn(`SNS operation failed, retrying in ${delay}ms`, {
+        this.alertLogger.warn(`SNS operation failed, retrying in ${delay}ms`, {
           attempt,
           maxAttempts: this.retryConfig.maxAttempts,
           error: lastError.message
@@ -342,6 +346,358 @@ export class AlertTool extends Tool {
 
     await this.sendSpendAlert(testCostAnalysis, testAlertContext, topicArn, iosConfig);
     
-    this.logger.info('Test alert sent successfully', { topicArn });
+    this.alertLogger.info('Test alert sent successfully', { topicArn });
+  }
+
+  /**
+   * Determines if an error is related to iOS/APNS delivery
+   */
+  private isIOSRelatedError(error: any): boolean {
+    if (!error) return false;
+
+    const errorMessage = error.message?.toLowerCase() || '';
+    const errorCode = error.code?.toLowerCase() || '';
+    const errorName = error.name?.toLowerCase() || '';
+
+    // Check for iOS/APNS specific error indicators
+    const iosErrorIndicators = [
+      'apns',
+      'platform endpoint',
+      'invalid token',
+      'endpoint disabled',
+      'certificate',
+      'platform application',
+      'ios',
+      'push notification'
+    ];
+
+    return iosErrorIndicators.some(indicator => 
+      errorMessage.includes(indicator) || 
+      errorCode.includes(indicator) || 
+      errorName.includes(indicator)
+    );
+  }
+
+  /**
+   * Enhanced alert delivery with comprehensive iOS monitoring
+   */
+  async sendSpendAlertWithIOSMonitoring(
+    costAnalysis: CostAnalysis,
+    alertContext: AlertContext,
+    topicArn: string,
+    iosConfig?: { platformApplicationArn: string; bundleId: string }
+  ): Promise<{
+    success: boolean;
+    channels: string[];
+    iosDelivered: boolean;
+    fallbackUsed: boolean;
+    errors: string[];
+    metrics: {
+      deliveryTime: number;
+      retryCount: number;
+      payloadSize: number;
+    };
+  }> {
+    const startTime = Date.now();
+    const timer = this.metrics.createTimer('SendSpendAlertWithMonitoring');
+    const channels: string[] = [];
+    let iosDeliveryAttempted = false;
+    let iosDeliverySuccessful = false;
+    let fallbackUsed = false;
+    const deliveryErrors: string[] = [];
+    let retryCount = 0;
+
+    try {
+      this.alertLogger.info('Starting enhanced spend alert delivery with iOS monitoring', {
+        totalCost: costAnalysis.totalCost,
+        threshold: alertContext.threshold,
+        exceedAmount: alertContext.exceedAmount,
+        alertLevel: alertContext.alertLevel,
+        hasIOSConfig: !!iosConfig
+      });
+
+      // Format messages for different channels
+      const emailSmsMessage = this.formatAlertMessage(costAnalysis, alertContext);
+      const iosPayload = iosConfig ? this.formatIOSPayload(costAnalysis, alertContext) : null;
+      const payloadSize = iosPayload ? JSON.stringify(iosPayload).length : emailSmsMessage.length;
+
+      // Determine available channels
+      channels.push('email', 'sms');
+      if (iosPayload) {
+        channels.push('ios');
+        iosDeliveryAttempted = true;
+      }
+
+      // Log iOS payload details for monitoring
+      if (iosPayload) {
+        this.alertLogger.debug('iOS payload prepared', {
+          payloadSize,
+          alertTitle: iosPayload.aps.alert.title,
+          alertBody: iosPayload.aps.alert.body,
+          badge: iosPayload.aps.badge,
+          sound: iosPayload.aps.sound,
+          customDataKeys: Object.keys(iosPayload.customData)
+        });
+      }
+
+      // Create enhanced message attributes
+      const messageAttributes: any = {
+        'alert_level': {
+          DataType: 'String',
+          StringValue: alertContext.alertLevel
+        },
+        'spend_amount': {
+          DataType: 'Number',
+          StringValue: costAnalysis.totalCost.toString()
+        },
+        'threshold': {
+          DataType: 'Number',
+          StringValue: alertContext.threshold.toString()
+        },
+        'delivery_timestamp': {
+          DataType: 'String',
+          StringValue: new Date().toISOString()
+        }
+      };
+
+      if (iosDeliveryAttempted) {
+        messageAttributes['ios_payload_size'] = {
+          DataType: 'Number',
+          StringValue: payloadSize.toString()
+        };
+      }
+
+      // Prepare the message structure for SNS
+      let message: string;
+      let messageStructure: string | undefined;
+
+      if (iosPayload) {
+        messageStructure = 'json';
+        message = JSON.stringify({
+          default: emailSmsMessage,
+          APNS: JSON.stringify(iosPayload),
+          APNS_SANDBOX: JSON.stringify(iosPayload),
+          email: emailSmsMessage,
+          sms: this.formatSMSMessage(costAnalysis, alertContext)
+        });
+      } else {
+        message = emailSmsMessage;
+      }
+
+      const publishInput: PublishCommandInput = {
+        TopicArn: topicArn,
+        Message: message,
+        MessageStructure: messageStructure,
+        Subject: `AWS Spend Alert: $${alertContext.exceedAmount.toFixed(2)} over budget`,
+        MessageAttributes: messageAttributes
+      };
+
+      // Attempt primary delivery with enhanced error handling
+      try {
+        const result = await this.executeWithRetryWithMetrics(
+          () => this.snsClient.send(new PublishCommand(publishInput)),
+          (attempt) => { retryCount = attempt - 1; }
+        );
+        
+        if (iosDeliveryAttempted) {
+          iosDeliverySuccessful = true;
+        }
+
+        this.alertLogger.info('Enhanced spend alert sent successfully', {
+          messageId: result.MessageId,
+          channels,
+          deliveryTime: Date.now() - startTime,
+          retryCount,
+          payloadSize,
+          iosDeliverySuccessful
+        });
+
+        // Record detailed success metrics
+        await this.metrics.recordAlertDelivery(channels, true, retryCount);
+        
+        if (iosDeliveryAttempted) {
+          await this.metrics.recordIOSNotification(1, iosDeliverySuccessful, 0);
+        }
+
+      } catch (deliveryError) {
+        const errorMessage = deliveryError instanceof Error ? deliveryError.message : 'Unknown delivery error';
+        deliveryErrors.push(errorMessage);
+
+        this.alertLogger.error('Primary enhanced alert delivery failed', deliveryError as Error, {
+          topicArn,
+          channels,
+          iosDeliveryAttempted,
+          retryCount,
+          payloadSize
+        });
+
+        // Enhanced iOS fallback handling
+        if (iosDeliveryAttempted && this.isIOSRelatedError(deliveryError)) {
+          this.alertLogger.warn('iOS delivery failed, attempting enhanced fallback to email/SMS only', {
+            originalError: errorMessage,
+            payloadSize
+          });
+          
+          fallbackUsed = true;
+          
+          try {
+            const fallbackInput: PublishCommandInput = {
+              TopicArn: topicArn,
+              Message: emailSmsMessage,
+              Subject: `AWS Spend Alert: $${alertContext.exceedAmount.toFixed(2)} over budget (iOS delivery failed)`,
+              MessageAttributes: {
+                ...messageAttributes,
+                'fallback_reason': {
+                  DataType: 'String',
+                  StringValue: 'iOS delivery failed'
+                },
+                'original_error': {
+                  DataType: 'String',
+                  StringValue: errorMessage.substring(0, 256) // Truncate for SNS limits
+                }
+              }
+            };
+
+            const fallbackResult = await this.executeWithRetryWithMetrics(
+              () => this.snsClient.send(new PublishCommand(fallbackInput)),
+              (attempt) => { retryCount += attempt - 1; }
+            );
+            
+            this.alertLogger.info('Enhanced fallback alert delivery successful', {
+              messageId: fallbackResult.MessageId,
+              fallbackChannels: ['email', 'sms'],
+              totalDeliveryTime: Date.now() - startTime,
+              totalRetryCount: retryCount,
+              originalError: errorMessage
+            });
+
+            // Record fallback success metrics
+            await this.metrics.recordAlertDelivery(['email', 'sms'], true, retryCount);
+            await this.metrics.recordIOSNotification(1, false, 0);
+
+          } catch (fallbackError) {
+            const fallbackErrorMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown fallback error';
+            deliveryErrors.push(`Fallback failed: ${fallbackErrorMessage}`);
+            
+            this.alertLogger.error('Enhanced fallback alert delivery failed', fallbackError as Error, {
+              totalRetryCount: retryCount,
+              totalDeliveryTime: Date.now() - startTime
+            });
+            
+            // Record complete failure metrics
+            await this.metrics.recordAlertDelivery(channels, false, retryCount);
+            if (iosDeliveryAttempted) {
+              await this.metrics.recordIOSNotification(1, false, 0);
+            }
+            
+            throw new Error(`Enhanced alert delivery completely failed: ${deliveryErrors.join('; ')}`);
+          }
+        } else {
+          // Non-iOS related error or no iOS involved
+          await this.metrics.recordAlertDelivery(channels, false, retryCount);
+          if (iosDeliveryAttempted) {
+            await this.metrics.recordIOSNotification(1, false, 0);
+          }
+          
+          throw deliveryError;
+        }
+      }
+
+      const deliveryTime = Date.now() - startTime;
+      await timer.stop(true);
+
+      return {
+        success: true,
+        channels,
+        iosDelivered: iosDeliverySuccessful,
+        fallbackUsed,
+        errors: deliveryErrors,
+        metrics: {
+          deliveryTime,
+          retryCount,
+          payloadSize
+        }
+      };
+
+    } catch (error) {
+      const deliveryTime = Date.now() - startTime;
+      
+      this.alertLogger.error('Enhanced spend alert delivery failed completely', error as Error, {
+        topicArn,
+        totalCost: costAnalysis.totalCost,
+        threshold: alertContext.threshold,
+        deliveryTime,
+        retryCount,
+        deliveryErrors
+      });
+
+      await timer.stop(false);
+      
+      return {
+        success: false,
+        channels,
+        iosDelivered: false,
+        fallbackUsed,
+        errors: deliveryErrors,
+        metrics: {
+          deliveryTime,
+          retryCount,
+          payloadSize: 0
+        }
+      };
+    }
+  }
+
+  /**
+   * Enhanced retry execution with metrics tracking
+   */
+  private async executeWithRetryWithMetrics<T>(
+    fn: () => Promise<T>,
+    onRetry?: (attempt: number) => void
+  ): Promise<T> {
+    let lastError: Error;
+    
+    for (let attempt = 1; attempt <= this.retryConfig.maxAttempts; attempt++) {
+      try {
+        const result = await fn();
+        
+        if (onRetry && attempt > 1) {
+          onRetry(attempt);
+        }
+        
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error('Unknown error');
+        
+        if (attempt === this.retryConfig.maxAttempts) {
+          break;
+        }
+
+        // Check if error is retryable
+        if (!this.isRetryableError(error)) {
+          throw lastError;
+        }
+
+        const delay = Math.min(
+          this.retryConfig.baseDelay * Math.pow(this.retryConfig.backoffMultiplier, attempt - 1),
+          this.retryConfig.maxDelay
+        );
+
+        this.alertLogger.warn(`Enhanced SNS operation failed, retrying in ${delay}ms`, {
+          attempt,
+          maxAttempts: this.retryConfig.maxAttempts,
+          error: lastError.message,
+          isIOSRelated: this.isIOSRelatedError(error)
+        });
+
+        if (onRetry) {
+          onRetry(attempt);
+        }
+
+        await this.sleep(delay);
+      }
+    }
+
+    throw lastError!;
   }
 }

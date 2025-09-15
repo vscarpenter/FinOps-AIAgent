@@ -7,6 +7,9 @@ import { CostAnalysisTool } from './tools/cost-analysis-tool';
 import { AlertTool } from './tools/alert-tool';
 import { iOSManagementTool } from './tools/ios-management-tool';
 import { SpendMonitorTask } from './tasks/spend-monitor-task';
+import { iOSMonitoringService } from './utils/ios-monitoring';
+import { createLogger } from './utils/logger';
+import { createMetricsCollector } from './utils/metrics';
 
 /**
  * AWS Spend Monitor Agent with iOS push notification support
@@ -22,6 +25,9 @@ export class SpendMonitorAgent extends Agent {
   private alertTool?: AlertTool;
   private iosManagementTool?: iOSManagementTool;
   private spendMonitorTask?: SpendMonitorTask;
+  private iosMonitoringService?: iOSMonitoringService;
+  private agentLogger = createLogger('SpendMonitorAgent');
+  private metrics = createMetricsCollector('us-east-1', 'SpendMonitor/Agent');
 
   constructor(config: SpendMonitorConfig) {
     super(config);
@@ -104,12 +110,49 @@ export class SpendMonitorAgent extends Agent {
         );
         this.registerTool(this.iosManagementTool);
         
-        // Validate APNS configuration
-        const isValidAPNS = await this.iosManagementTool.validateAPNSConfig();
-        if (!isValidAPNS) {
-          console.warn('APNS configuration validation failed - iOS notifications may not work');
-        } else {
-          console.log('iOS Management Tool registered and APNS validated');
+        // Initialize comprehensive iOS monitoring service
+        this.iosMonitoringService = new iOSMonitoringService(
+          this.config.iosConfig,
+          this.config.region
+        );
+        
+        // Perform comprehensive iOS health check during initialization
+        try {
+          const healthCheck = await this.iosMonitoringService.performComprehensiveHealthCheck();
+          
+          if (healthCheck.overall === 'critical') {
+            this.agentLogger.error('Critical iOS system issues detected during initialization', new Error('Critical iOS system issues'), {
+              components: healthCheck.components,
+              recommendations: healthCheck.recommendations
+            });
+            console.warn('CRITICAL: iOS notifications may not work - check logs for details');
+          } else if (healthCheck.overall === 'warning') {
+            this.agentLogger.warn('iOS system warnings detected during initialization', {
+              components: healthCheck.components,
+              recommendations: healthCheck.recommendations
+            });
+            console.warn('WARNING: iOS notifications may have issues - check logs for details');
+          } else {
+            this.agentLogger.info('iOS system health check passed', {
+              certificateExpiration: healthCheck.components.certificate.daysUntilExpiration,
+              activeEndpoints: healthCheck.components.endpoints.active
+            });
+            console.log('iOS Management Tool registered and comprehensive health check passed');
+          }
+
+          // Perform automated recovery if needed
+          if (healthCheck.overall !== 'healthy') {
+            const recoveryResult = await this.iosMonitoringService.performAutomatedRecovery(healthCheck);
+            if (recoveryResult.success && recoveryResult.actionsPerformed.length > 0) {
+              this.agentLogger.info('Automated iOS recovery completed', {
+                actions: recoveryResult.actionsPerformed
+              });
+            }
+          }
+
+        } catch (error) {
+          this.agentLogger.error('iOS health check failed during initialization', error as Error);
+          console.warn('iOS health check failed - iOS notifications may not work properly');
         }
       }
 

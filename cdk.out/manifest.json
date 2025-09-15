@@ -18,7 +18,7 @@
         "validateOnSynth": false,
         "assumeRoleArn": "arn:${AWS::Partition}:iam::710603110067:role/cdk-hnb659fds-deploy-role-710603110067-us-east-1",
         "cloudFormationExecutionRoleArn": "arn:${AWS::Partition}:iam::710603110067:role/cdk-hnb659fds-cfn-exec-role-710603110067-us-east-1",
-        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-710603110067-us-east-1/9dd7e0b17d3959c3221dc907d8877977086dff71c5a06b734138e0b2a062fae8.json",
+        "stackTemplateAssetObjectUrl": "s3://cdk-hnb659fds-assets-710603110067-us-east-1/ae4154c4e5fbc84f671c805bfb326f467c5b33fb7614a9a3ba9f51512cb1aa43.json",
         "requiresBootstrapStackVersion": 6,
         "bootstrapStackVersionSsmParameter": "/cdk-bootstrap/hnb659fds/version",
         "additionalDependencies": [
@@ -78,6 +78,180 @@
             "data": "SpendMonitorAgentBEC3B4B9"
           }
         ],
+        "/SpendMonitorStack/DeviceRegistrationFunction/ServiceRole/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationFunctionServiceRole8BFAFB7E"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationFunction/ServiceRole/DefaultPolicy/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationFunctionServiceRoleDefaultPolicy5DC0FEA4"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationFunction/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationFunction0D8ACE87"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApi539944FE"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Deployment/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApiDeployment2FDA60FAb2da9b50a297aee21fa01cf2dcdb8c0d"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/DeploymentStage.v1/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApiDeploymentStagev1185A1A12"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Endpoint": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApiEndpoint0ABC7830"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/OPTIONS/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApiOPTIONSBFB5ECE0"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesFCBC9A73"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/OPTIONS/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesOPTIONS10970C57"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/POST/ApiPermission.SpendMonitorStackDeviceRegistrationApi4336D341.POST..devices": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesPOSTApiPermissionSpendMonitorStackDeviceRegistrationApi4336D341POSTdevicesD6B805CD"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/POST/ApiPermission.Test.SpendMonitorStackDeviceRegistrationApi4336D341.POST..devices": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesPOSTApiPermissionTestSpendMonitorStackDeviceRegistrationApi4336D341POSTdevices867D87C1"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/POST/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesPOSTACE6CAFF"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/PUT/ApiPermission.SpendMonitorStackDeviceRegistrationApi4336D341.PUT..devices": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesPUTApiPermissionSpendMonitorStackDeviceRegistrationApi4336D341PUTdevices0730E9A1"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/PUT/ApiPermission.Test.SpendMonitorStackDeviceRegistrationApi4336D341.PUT..devices": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesPUTApiPermissionTestSpendMonitorStackDeviceRegistrationApi4336D341PUTdevices4D56B4BE"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/PUT/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesPUT87E1AF2A"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/GET/ApiPermission.SpendMonitorStackDeviceRegistrationApi4336D341.GET..devices": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesGETApiPermissionSpendMonitorStackDeviceRegistrationApi4336D341GETdevices7D11635B"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/GET/ApiPermission.Test.SpendMonitorStackDeviceRegistrationApi4336D341.GET..devices": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesGETApiPermissionTestSpendMonitorStackDeviceRegistrationApi4336D341GETdevices08694595"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/GET/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesGET3A2B509F"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/{deviceToken}/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesdeviceTokenBE9D1A74"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/{deviceToken}/OPTIONS/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesdeviceTokenOPTIONS0945A247"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/{deviceToken}/DELETE/ApiPermission.SpendMonitorStackDeviceRegistrationApi4336D341.DELETE..devices.{deviceToken}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesdeviceTokenDELETEApiPermissionSpendMonitorStackDeviceRegistrationApi4336D341DELETEdevicesdeviceToken464BDB95"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/{deviceToken}/DELETE/ApiPermission.Test.SpendMonitorStackDeviceRegistrationApi4336D341.DELETE..devices.{deviceToken}": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesdeviceTokenDELETEApiPermissionTestSpendMonitorStackDeviceRegistrationApi4336D341DELETEdevicesdeviceToken293C2C42"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApi/Default/devices/{deviceToken}/DELETE/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApidevicesdeviceTokenDELETEE8934480"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationValidator/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationValidator03E5AB79"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationModel/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationModelCFD74879"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApiKey/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApiKeyE8DE2337"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationUsagePlan/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationUsagePlanE5195C26"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationUsagePlan/UsagePlanKeyResource:SpendMonitorStackDeviceRegistrationApiKeyF035FA7E": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationUsagePlanUsagePlanKeyResourceSpendMonitorStackDeviceRegistrationApiKeyF035FA7E9C28B2C9"
+          }
+        ],
         "/SpendMonitorStack/SpendCheckSchedule/Resource": [
           {
             "type": "aws:cdk:logicalId",
@@ -120,6 +294,48 @@
             "data": "AlertDeliveryFailureAlarm03B2D208"
           }
         ],
+        "/SpendMonitorStack/iOSNotificationFailureAlarm/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "iOSNotificationFailureAlarm46710358"
+          }
+        ],
+        "/SpendMonitorStack/iOSInvalidTokenAlarm/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "iOSInvalidTokenAlarm7EA0276C"
+          }
+        ],
+        "/SpendMonitorStack/APNSCertificateHealthAlarm/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "APNSCertificateHealthAlarm77241300"
+          }
+        ],
+        "/SpendMonitorStack/APNSCertificateExpirationWarningAlarm/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "APNSCertificateExpirationWarningAlarm1485127D"
+          }
+        ],
+        "/SpendMonitorStack/APNSCertificateExpirationCriticalAlarm/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "APNSCertificateExpirationCriticalAlarm65E952C0"
+          }
+        ],
+        "/SpendMonitorStack/iOSFallbackUsageAlarm/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "iOSFallbackUsageAlarm7E7EAD88"
+          }
+        ],
+        "/SpendMonitorStack/iOSRegistrationFailureAlarm/Resource": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "iOSRegistrationFailureAlarmA4CF04D3"
+          }
+        ],
         "/SpendMonitorStack/SpendMonitorDashboard/Resource": [
           {
             "type": "aws:cdk:logicalId",
@@ -160,6 +376,24 @@
           {
             "type": "aws:cdk:logicalId",
             "data": "DashboardURL"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApiUrl": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApiUrl"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationApiKeyId": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationApiKeyId"
+          }
+        ],
+        "/SpendMonitorStack/DeviceRegistrationFunctionName": [
+          {
+            "type": "aws:cdk:logicalId",
+            "data": "DeviceRegistrationFunctionName"
           }
         ],
         "/SpendMonitorStack/CDKMetadata/Default": [

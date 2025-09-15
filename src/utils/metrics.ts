@@ -211,6 +211,149 @@ export class MetricsCollector {
   }
 
   /**
+   * Records iOS device registration metrics
+   */
+  async recordIOSDeviceRegistration(success: boolean, errorType?: string): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'iOSDeviceRegistrationCount',
+        Value: 1,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'Status', Value: success ? 'Success' : 'Failure' }
+        ],
+        Timestamp: new Date()
+      }
+    ];
+
+    if (!success && errorType) {
+      metrics.push({
+        MetricName: 'iOSRegistrationErrorType',
+        Value: 1,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'ErrorType', Value: errorType }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records APNS certificate health metrics
+   */
+  async recordAPNSCertificateHealth(
+    isValid: boolean, 
+    daysUntilExpiration?: number, 
+    warningCount: number = 0, 
+    errorCount: number = 0
+  ): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'APNSCertificateValid',
+        Value: isValid ? 1 : 0,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'APNSCertificateWarnings',
+        Value: warningCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'APNSCertificateErrors',
+        Value: errorCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      }
+    ];
+
+    if (daysUntilExpiration !== undefined) {
+      metrics.push({
+        MetricName: 'APNSCertificateDaysUntilExpiration',
+        Value: daysUntilExpiration,
+        Unit: 'Count',
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records iOS notification payload metrics
+   */
+  async recordIOSPayloadMetrics(payloadSize: number, deliveryTime: number, retryCount: number): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'iOSPayloadSize',
+        Value: payloadSize,
+        Unit: 'Bytes',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'iOSNotificationDeliveryTime',
+        Value: deliveryTime,
+        Unit: 'Milliseconds',
+        Timestamp: new Date()
+      }
+    ];
+
+    if (retryCount > 0) {
+      metrics.push({
+        MetricName: 'iOSNotificationRetryCount',
+        Value: retryCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records iOS fallback usage metrics
+   */
+  async recordIOSFallbackUsage(fallbackChannels: string[], success: boolean): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'iOSFallbackUsed',
+        Value: 1,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'Status', Value: success ? 'Success' : 'Failure' }
+        ],
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'iOSFallbackChannelCount',
+        Value: fallbackChannels.length,
+        Unit: 'Count',
+        Timestamp: new Date()
+      }
+    ];
+
+    // Record metrics per fallback channel
+    for (const channel of fallbackChannels) {
+      metrics.push({
+        MetricName: 'iOSFallbackChannelUsage',
+        Value: 1,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'Channel', Value: channel },
+          { Name: 'Status', Value: success ? 'Success' : 'Failure' }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
    * Records API call metrics
    */
   async recordAPICall(service: string, operation: string, durationMs: number, success: boolean): Promise<void> {
