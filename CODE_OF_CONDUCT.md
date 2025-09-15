@@ -44,11 +44,10 @@ an individual is officially representing the community.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported by opening a private security advisory or contacting the maintainer at
-security@your-domain.example. All complaints will be reviewed and investigated
+vscarpenter@gmail.com. All complaints will be reviewed and investigated
 promptly and fairly.
 
 ## Attribution
 
 This Code of Conduct is adapted from the Contributor Covenant,
 version 2.1, available at https://www.contributor-covenant.org/version/2/1/code_of_conduct.html
-

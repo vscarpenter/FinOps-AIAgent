@@ -5,7 +5,7 @@
 Please report security issues privately to the maintainer:
 
 - Preferred: Open a private report via GitHub Security Advisories
-- Alternate: Email security@your-domain.example
+- Alternate: Email vscarpenter@gmail.com
 
 We aim to acknowledge reports within 2 business days and resolve critical
 issues as quickly as possible. Please do not disclose vulnerabilities publicly
@@ -21,4 +21,3 @@ recent tagged release.
 - We confirm the issue and assess impact/severity.
 - We develop and test a fix.
 - We coordinate a release and publish an advisory crediting the reporter.
-

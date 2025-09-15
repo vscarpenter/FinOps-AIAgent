@@ -2,5 +2,4 @@
 
 - Vinny Carpenter (@vinnycarpenter)
 
-Contact: security@your-domain.example
-
+Contact: vscarpenter@gmail.com
