@@ -125,6 +125,17 @@ npm run deploy
 
 # Validate deployment success
 npm run validate:deployment
+
+### Post‑Deploy Verification
+After deployment, you can verify that the correct code is running and that the agent is behaving as expected:
+
+- Verify deployed Lambda bundle is clean (no stale requires)
+  - npm run verify:lambda-bundle -- <LambdaFunctionName>
+  - This downloads the live bundle from AWS and scans for unexpected references like `strands-agents`.
+
+- Force the alert path once and scan logs
+  - npm run test:deployment
+  - Temporarily lowers `SPEND_THRESHOLD` to 0.01, invokes the Lambda, scans logs for alert messages, and restores the original environment.
 ```
 
 ### iOS Configuration (Optional)
@@ -184,6 +195,46 @@ npm run test:local
 # Test device registration API
 npm run test:device-api
 ```
+
+### Live Deployment Test (Alert Path)
+After deploying, you can validate the Lambda end‑to‑end in your AWS account using the included helper script. It temporarily lowers `SPEND_THRESHOLD` to force the alert path, invokes the function, scans logs for alert messages, and then restores the original environment.
+
+```bash
+# Quick run (resolves function from CloudFormation outputs)
+npm run test:deployment
+
+# Equivalent direct script usage
+scripts/test-deployment.sh --stack-name SpendMonitorStack
+
+# Specify function name explicitly
+scripts/test-deployment.sh --function-name SpendMonitorStack-SpendMonitorAgentV2-<id>
+
+# Options
+#   -r/--region REGION      AWS region (default env or us-east-1)
+#   --since MINUTES         Minutes to scan logs (default 10)
+#   --keep-threshold        Do not restore the original SPEND_THRESHOLD
+```
+
+The script prints the Lambda invocation result and any recent log lines matching:
+- "Spending threshold exceeded"
+- "Alert sent successfully"
+- "Simplified alert sent successfully"
+
+## 🧩 Troubleshooting
+
+- Lambda fails with "Cannot find module 'strands-agents'"
+  - Cause: stale artifact deployed. Fix by rebuilding and verifying the live bundle:
+    - npm run build
+    - npm run verify:lambda-bundle -- <LambdaFunctionName>
+    - If found, redeploy (./deploy.sh) which now syncs `dist/` → `fresh-deployment/` and blocks on stray references.
+
+- Lambda creation fails with "Unzipped size must be smaller than 262144000 bytes"
+  - The deployment now installs production‑only dependencies into `fresh-deployment/` during `./deploy.sh`.
+  - If you see this again, run a clean deploy:
+    - ./deploy.sh --clean --skip-tests
+
+- Jest error: missing `strands-agents` module in tests
+  - Tests use a virtual mock declared in `tests/setup.ts`. If running Jest directly outside this repo setup, ensure `setupFilesAfterEnv` includes `tests/setup.ts`.
 
 ### Validation Scripts
 ```bash

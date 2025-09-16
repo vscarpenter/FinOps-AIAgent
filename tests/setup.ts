@@ -45,7 +45,7 @@ jest.mock('strands-agents', () => ({
   Task: class MockTask {
     constructor(public name: string, public description: string) {}
   }
-}));
+}), { virtual: true });
 
 // Set up environment variables for tests
 process.env.AWS_REGION = 'us-east-1';
