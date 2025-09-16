@@ -1,4 +1,4 @@
-import { Agent } from 'strands-agents';
+import { Agent } from './mock-strands-agent';
 import { CostExplorerClient } from '@aws-sdk/client-cost-explorer';
 import { SNSClient } from '@aws-sdk/client-sns';
 import { SpendMonitorConfig, CostAnalysis, AlertContext } from './types';
@@ -6,6 +6,7 @@ import { validateSpendMonitorConfig } from './validation';
 import { CostAnalysisTool } from './tools/cost-analysis-tool';
 import { AlertTool } from './tools/alert-tool';
 import { iOSManagementTool } from './tools/ios-management-tool';
+import { CostInsightsTool } from './tools/cost-insights-tool';
 import { SpendMonitorTask } from './tasks/spend-monitor-task';
 import { iOSMonitoringService } from './utils/ios-monitoring';
 import { createLogger } from './utils/logger';
@@ -22,6 +23,7 @@ export class SpendMonitorAgent extends Agent {
   private sns: SNSClient;
   protected config: SpendMonitorConfig;
   private costAnalysisTool?: CostAnalysisTool;
+  private costInsightsTool?: CostInsightsTool;
   private alertTool?: AlertTool;
   private iosManagementTool?: iOSManagementTool;
   private spendMonitorTask?: SpendMonitorTask;
@@ -93,6 +95,15 @@ export class SpendMonitorAgent extends Agent {
       );
       this.registerTool(this.costAnalysisTool);
       console.log('Cost Analysis Tool registered');
+
+      if (this.config.bedrockConfig) {
+        this.costInsightsTool = new CostInsightsTool(
+          this.config.bedrockConfig,
+          this.config.region
+        );
+        this.registerTool(this.costInsightsTool);
+        console.log('Cost Insights Tool registered');
+      }
 
       // Initialize Alert Tool with multi-channel support
       this.alertTool = new AlertTool(
@@ -288,8 +299,21 @@ export class SpendMonitorAgent extends Agent {
     if (!this.costAnalysisTool) {
       throw new Error('Cost Analysis Tool not initialized');
     }
-    
-    return await this.costAnalysisTool.getCurrentMonthCosts();
+
+    const costAnalysis = await this.costAnalysisTool.getCurrentMonthCosts();
+
+    if (this.costInsightsTool) {
+      try {
+        const insights = await this.costInsightsTool.generateInsights(costAnalysis, this.config.spendThreshold);
+        if (insights) {
+          costAnalysis.insights = insights;
+        }
+      } catch (error) {
+        console.warn('Failed to generate Bedrock insights - continuing without AI summary', error);
+      }
+    }
+
+    return costAnalysis;
   }
 
   /**
@@ -368,6 +392,7 @@ export class SpendMonitorAgent extends Agent {
       costAnalysis: 'healthy' | 'unhealthy';
       alerts: 'healthy' | 'unhealthy';
       ios?: 'healthy' | 'unhealthy';
+      aiInsights?: 'healthy' | 'unhealthy';
       tasks: 'healthy' | 'unhealthy';
     };
     errors: string[];
@@ -386,6 +411,15 @@ export class SpendMonitorAgent extends Agent {
     } catch (error) {
       components.costAnalysis = 'unhealthy';
       errors.push(`Cost Analysis Tool error: ${error}`);
+    }
+
+    if (this.config.bedrockConfig) {
+      if (this.costInsightsTool) {
+        components.aiInsights = 'healthy';
+      } else {
+        components.aiInsights = 'unhealthy';
+        errors.push('Cost Insights Tool not initialized');
+      }
     }
 
     // Check Alert Tool

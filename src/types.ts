@@ -1,4 +1,4 @@
-import { AgentConfig } from 'strands-agents';
+import { AgentConfig } from './mock-strands-agent';
 
 /**
  * Core data model for cost analysis results
@@ -21,6 +21,8 @@ export interface CostAnalysis {
   currency: string;
   /** Timestamp when data was retrieved */
   lastUpdated: string;
+  /** Optional AI generated insights about the spend profile */
+  insights?: CostInsights;
 }
 
 /**
@@ -85,6 +87,42 @@ export interface SpendMonitorConfig extends AgentConfig {
   minServiceCostThreshold: number;
   /** iOS push notification configuration (optional) */
   iosConfig?: iOSPushConfig;
+  /** Bedrock configuration for generating spend insights (optional) */
+  bedrockConfig?: BedrockCostInsightsConfig;
+}
+
+/**
+ * Configuration for Bedrock based cost insights
+ */
+export interface BedrockCostInsightsConfig {
+  /** Identifier of the Bedrock model to invoke */
+  modelId: string;
+  /** Region used for Bedrock invocations (defaults to AWS region) */
+  region?: string;
+  /** Maximum number of tokens to request from the model */
+  maxOutputTokens?: number;
+  /** Sampling temperature for text generation */
+  temperature?: number;
+  /** Nucleus sampling value for text generation */
+  topP?: number;
+}
+
+/**
+ * Structured insight output returned by the Bedrock model
+ */
+export interface CostInsights {
+  /** Short narrative describing current spend dynamics */
+  summary: string;
+  /** Confidence indicator provided by the model */
+  confidence: 'LOW' | 'MEDIUM' | 'HIGH';
+  /** Recommended actions surfaced by the model */
+  recommendedActions: string[];
+  /** Notable findings or anomalies detected */
+  notableFindings: string[];
+  /** Identifier of the model that produced the insight */
+  modelId: string;
+  /** Timestamp when the insight was generated */
+  generatedAt: string;
 }
 
 /**
@@ -139,6 +177,10 @@ export interface APNSPayload {
     topService: string;
     /** Unique alert identifier */
     alertId: string;
+    /** Optional AI generated summary */
+    aiSummary?: string;
+    /** Confidence rating for the AI summary */
+    aiConfidence?: string;
   };
 }
 
