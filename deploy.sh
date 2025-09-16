@@ -224,6 +224,30 @@ if ! npm run build; then
 fi
 print_success "Application built successfully"
 
+# Sync compiled output into fresh-deployment (without removing node_modules)
+print_status "Syncing compiled assets to fresh-deployment/..."
+mkdir -p fresh-deployment
+rsync -a dist/ fresh-deployment/
+print_success "Synced dist/ -> fresh-deployment/"
+
+# Sanity check: ensure no stray references to 'strands-agents' remain
+if rg -n "strands-agents" dist/ fresh-deployment/ >/dev/null 2>&1; then
+    print_error "Unexpected reference to 'strands-agents' found in build artifacts."
+    rg -n "strands-agents" dist/ fresh-deployment/ || true
+    exit 1
+fi
+
+# Prepare minimal production dependencies inside fresh-deployment
+print_status "Preparing minimal production dependencies in fresh-deployment/..."
+rm -rf fresh-deployment/node_modules
+cp package.json package-lock.json fresh-deployment/
+if npm ci --omit=dev --prefix fresh-deployment; then
+    print_success "Installed production dependencies in fresh-deployment/"
+else
+    print_error "Failed to install production dependencies in fresh-deployment/"
+    exit 1
+fi
+
 # Check if CDK is installed
 if ! command_exists cdk; then
     print_warning "CDK CLI not found globally. Installing locally..."

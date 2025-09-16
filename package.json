@@ -20,6 +20,8 @@
     "validate:pre-deploy": "./scripts/pre-deployment-check.sh",
     "validate:ios": "./scripts/validate-ios-config.sh",
     "validate:deployment": "./scripts/validate-deployment.sh",
+    "verify:lambda-bundle": "./scripts/verify-deployed-bundle.sh",
+    "test:deployment": "./scripts/test-deployment.sh",
     "validate:all": "npm run validate:config && npm run validate:pre-deploy",
     "lint": "eslint src/**/*.ts",
     "clean": "rm -rf dist coverage",
@@ -31,12 +33,11 @@
     "@aws-sdk/client-dynamodb": "^3.888.0",
     "@aws-sdk/client-lambda": "^3.450.0",
     "@aws-sdk/client-sns": "^3.450.0",
-    "@aws-sdk/util-dynamodb": "^3.888.0",
-    "aws-cdk-lib": "^2.100.0",
-    "constructs": "^10.0.0",
-    "strands-agents": "^0.0.1"
+    "@aws-sdk/util-dynamodb": "^3.888.0"
   },
   "devDependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.0.0",
     "@types/jest": "^29.0.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
