@@ -30,6 +30,7 @@ This FinOps AI Agent is a production-ready platform that combines:
 - **🧠 Intelligent Cost Monitoring** - AI-powered AWS spend analysis with trend detection
 - **📱 iOS Device Management** - Complete APNS integration with device lifecycle management
 - **🔔 Multi-Channel Alerting** - Email, SMS, and iOS push notifications with intelligent fallback
+- **🤖 AI-Assisted Insights** - Optional Bedrock-powered summaries for cost anomalies
 - **🔧 Automated Recovery** - Self-healing capabilities with comprehensive health monitoring
 - **📊 Enterprise Observability** - Full metrics, logging, and operational dashboards
 
@@ -123,6 +124,14 @@ npm run validate:pre-deploy
 npm run deploy
 # or: cdk deploy
 
+# Include Bedrock config via CDK context
+cdk deploy \
+  -c bedrockModelId=amazon.titan-text-lite-v1 \
+  -c bedrockRegion=us-east-1 \
+  -c bedrockMaxTokens=256 \
+  -c bedrockTemperature=0.2 \
+  -c bedrockTopP=0.9
+
 # Validate deployment success
 npm run validate:deployment
 
@@ -164,6 +173,13 @@ SNS_TOPIC_ARN=arn:aws:sns:us-east-1:123456789012:cost-alerts
 # Optional (for iOS)
 IOS_PLATFORM_APPLICATION_ARN=arn:aws:sns:us-east-1:123456789012:app/APNS/YourApp
 IOS_BUNDLE_ID=com.yourcompany.yourapp
+
+# Optional (for Bedrock insights)
+BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
+BEDROCK_REGION=us-east-1
+BEDROCK_MAX_TOKENS=256
+BEDROCK_TEMPERATURE=0.2
+BEDROCK_TOP_P=0.9
 ```
 
 ## 🧪 Testing

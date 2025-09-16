@@ -1,5 +1,5 @@
 import { SpendMonitorAgent } from './agent';
-import { SpendMonitorConfig, iOSPushConfig } from './types';
+import { SpendMonitorConfig, iOSPushConfig, BedrockCostInsightsConfig } from './types';
 import { createDefaultConfig } from './validation';
 
 /**
@@ -104,6 +104,7 @@ function loadConfiguration(): SpendMonitorConfig {
 
     // Load iOS configuration if provided
     let iosConfig: iOSPushConfig | undefined;
+    let bedrockConfig: BedrockCostInsightsConfig | undefined;
     
     if (process.env.IOS_PLATFORM_APP_ARN) {
       console.log('iOS push notifications enabled - loading APNS configuration');
@@ -125,6 +126,25 @@ function loadConfiguration(): SpendMonitorConfig {
       });
     }
 
+    if (process.env.BEDROCK_MODEL_ID) {
+      console.log('Bedrock cost insights enabled - loading configuration');
+      bedrockConfig = {
+        modelId: process.env.BEDROCK_MODEL_ID,
+        region: process.env.BEDROCK_REGION,
+        maxOutputTokens: parseOptionalNumber(process.env.BEDROCK_MAX_TOKENS),
+        temperature: parseOptionalFloatInRange(process.env.BEDROCK_TEMPERATURE),
+        topP: parseOptionalFloatInRange(process.env.BEDROCK_TOP_P)
+      };
+
+      console.log('Bedrock configuration loaded:', {
+        modelId: bedrockConfig.modelId,
+        region: bedrockConfig.region || process.env.AWS_REGION || 'us-east-1',
+        maxOutputTokens: bedrockConfig.maxOutputTokens,
+        temperature: bedrockConfig.temperature,
+        topP: bedrockConfig.topP
+      });
+    }
+
     // Create configuration with validation
     const config = createDefaultConfig({
       spendThreshold: parseFloat(process.env.SPEND_THRESHOLD || '10'),
@@ -133,7 +153,8 @@ function loadConfiguration(): SpendMonitorConfig {
       region: process.env.AWS_REGION || 'us-east-1',
       retryAttempts: parseInt(process.env.RETRY_ATTEMPTS || '3'),
       minServiceCostThreshold: parseFloat(process.env.MIN_SERVICE_COST_THRESHOLD || '1'),
-      iosConfig
+      iosConfig,
+      bedrockConfig
     });
 
     console.log('Configuration validation completed');
@@ -143,6 +164,29 @@ function loadConfiguration(): SpendMonitorConfig {
     console.error('Failed to load configuration:', error);
     throw new Error(`Configuration loading failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+function parseOptionalNumber(value?: string): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseOptionalFloatInRange(value?: string): number | undefined {
+  const parsed = parseOptionalNumber(value);
+  if (parsed === undefined) {
+    return undefined;
+  }
+
+  if (parsed >= 0 && parsed <= 1) {
+    return parsed;
+  }
+
+  console.warn(`Ignoring Bedrock parameter outside accepted range (0-1): ${value}`);
+  return undefined;
 }
 
 /**

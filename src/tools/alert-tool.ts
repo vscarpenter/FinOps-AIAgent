@@ -1,4 +1,4 @@
-import { Tool } from 'strands-agents';
+import { Tool } from '../mock-strands-agent';
 import { SNSClient, PublishCommand, PublishCommandInput } from '@aws-sdk/client-sns';
 import { CostAnalysis, AlertContext, ServiceCost, APNSPayload, RetryConfig } from '../types';
 import { createLogger } from '../utils/logger';
@@ -117,12 +117,37 @@ export class AlertTool extends Tool {
       lines.push('');
     }
 
+    let recommendations = [
+      'Review your AWS resources and usage patterns',
+      'Consider scaling down or terminating unused resources',
+      'Check for any unexpected charges or services',
+      'Set up additional CloudWatch alarms for specific services'
+    ];
+
+    if (costAnalysis.insights) {
+      lines.push('🤖 AI Cost Insight:', costAnalysis.insights.summary, '');
+
+      if (costAnalysis.insights.notableFindings.length > 0) {
+        lines.push('📌 Notable Findings:');
+        costAnalysis.insights.notableFindings.forEach(finding => {
+          lines.push(`• ${finding}`);
+        });
+        lines.push('');
+      }
+
+      if (costAnalysis.insights.recommendedActions.length > 0) {
+        recommendations = costAnalysis.insights.recommendedActions;
+      }
+
+      lines.push(`Model: ${costAnalysis.insights.modelId} (confidence: ${costAnalysis.insights.confidence})`, '');
+    }
+
+    lines.push('💡 Recommendations:');
+    recommendations.forEach(recommendation => {
+      lines.push(`• ${recommendation}`);
+    });
+
     lines.push(
-      '💡 Recommendations:',
-      '• Review your AWS resources and usage patterns',
-      '• Consider scaling down or terminating unused resources',
-      '• Check for any unexpected charges or services',
-      '• Set up additional CloudWatch alarms for specific services',
       '',
       `⏰ Alert generated at: ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC`
     );
@@ -136,8 +161,9 @@ export class AlertTool extends Tool {
   formatSMSMessage(costAnalysis: CostAnalysis, alertContext: AlertContext): string {
     const topService = alertContext.topServices[0];
     const topServiceText = topService ? ` Top service: ${topService.serviceName} ($${topService.cost.toFixed(2)})` : '';
-    
-    return `AWS Spend Alert: $${costAnalysis.totalCost.toFixed(2)} spent (over $${alertContext.threshold} threshold by $${alertContext.exceedAmount.toFixed(2)}).${topServiceText} Projected monthly: $${costAnalysis.projectedMonthly.toFixed(2)}`;
+    const aiSummary = costAnalysis.insights?.summary ? ` AI: ${this.truncateForSms(costAnalysis.insights.summary, 100)}` : '';
+
+    return `AWS Spend Alert: $${costAnalysis.totalCost.toFixed(2)} spent (over $${alertContext.threshold} threshold by $${alertContext.exceedAmount.toFixed(2)}).${topServiceText} Projected monthly: $${costAnalysis.projectedMonthly.toFixed(2)}.${aiSummary}`;
   }
 
   /**
@@ -163,9 +189,19 @@ export class AlertTool extends Tool {
         threshold: alertContext.threshold,
         exceedAmount: alertContext.exceedAmount,
         topService: topService?.serviceName || 'Unknown',
-        alertId
+        alertId,
+        aiSummary: costAnalysis.insights?.summary,
+        aiConfidence: costAnalysis.insights?.confidence
       }
     };
+  }
+
+  private truncateForSms(value: string, limit: number): string {
+    const normalised = value.replace(/\s+/g, ' ').trim();
+    if (normalised.length <= limit) {
+      return normalised;
+    }
+    return `${normalised.slice(0, limit - 1)}…`;
   }
 
   /**
