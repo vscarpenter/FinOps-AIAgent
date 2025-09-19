@@ -24,6 +24,79 @@ export interface CostAnalysis {
 }
 
 /**
+ * AI analysis result from Bedrock
+ */
+export interface AIAnalysisResult {
+  /** AI-generated summary of spending patterns */
+  summary: string;
+  /** Key insights from AI analysis */
+  keyInsights: string[];
+  /** Confidence score (0.0 to 1.0) */
+  confidenceScore: number;
+  /** Analysis timestamp */
+  analysisTimestamp: string;
+  /** Bedrock model used for analysis */
+  modelUsed: string;
+  /** Processing cost for this analysis */
+  processingCost?: number;
+}
+
+/**
+ * Anomaly detection result
+ */
+export interface AnomalyDetectionResult {
+  /** Whether anomalies were detected */
+  anomaliesDetected: boolean;
+  /** List of detected anomalies */
+  anomalies: Array<{
+    /** AWS service with anomaly */
+    service: string;
+    /** Severity level */
+    severity: 'LOW' | 'MEDIUM' | 'HIGH';
+    /** Description of the anomaly */
+    description: string;
+    /** Confidence score for this anomaly */
+    confidenceScore: number;
+    /** Suggested action to address anomaly */
+    suggestedAction?: string;
+  }>;
+}
+
+/**
+ * Cost optimization recommendation
+ */
+export interface OptimizationRecommendation {
+  /** Recommendation category */
+  category: 'RIGHTSIZING' | 'RESERVED_INSTANCES' | 'SPOT_INSTANCES' | 'STORAGE_OPTIMIZATION' | 'OTHER';
+  /** AWS service this applies to */
+  service: string;
+  /** Detailed description */
+  description: string;
+  /** Estimated monthly savings */
+  estimatedSavings?: number;
+  /** Priority level */
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  /** Implementation complexity */
+  implementationComplexity: 'EASY' | 'MEDIUM' | 'COMPLEX';
+}
+
+/**
+ * Enhanced cost analysis with AI insights
+ */
+export interface EnhancedCostAnalysis extends CostAnalysis {
+  /** AI analysis results */
+  aiAnalysis?: AIAnalysisResult;
+  /** Detected anomalies */
+  anomalies?: AnomalyDetectionResult;
+  /** Optimization recommendations */
+  recommendations?: OptimizationRecommendation[];
+  /** AI processing time in milliseconds */
+  aiProcessingTime?: number;
+  /** Whether fallback was used due to AI failure */
+  fallbackUsed?: boolean;
+}
+
+/**
  * Context information for alert generation
  */
 export interface AlertContext {
@@ -68,6 +141,32 @@ export interface iOSPushConfig {
 }
 
 /**
+ * AI analysis configuration for Bedrock integration
+ */
+export interface BedrockConfig {
+  /** Enable AI analysis */
+  enabled: boolean;
+  /** Bedrock model ID (e.g., 'amazon.titan-text-express-v1') */
+  modelId: string;
+  /** AWS region for Bedrock */
+  region: string;
+  /** Maximum tokens for AI responses */
+  maxTokens: number;
+  /** Temperature for AI model (0.0 to 1.0) */
+  temperature: number;
+  /** Maximum monthly Bedrock spend threshold */
+  costThreshold: number;
+  /** Rate limit per minute for Bedrock calls */
+  rateLimitPerMinute: number;
+  /** Cache AI results to reduce costs */
+  cacheResults: boolean;
+  /** Cache TTL in minutes */
+  cacheTTLMinutes: number;
+  /** Fallback to basic analysis on AI errors */
+  fallbackOnError: boolean;
+}
+
+/**
  * Configuration for the spend monitor agent
  */
 export interface SpendMonitorConfig extends AgentConfig {
@@ -85,6 +184,8 @@ export interface SpendMonitorConfig extends AgentConfig {
   minServiceCostThreshold: number;
   /** iOS push notification configuration (optional) */
   iosConfig?: iOSPushConfig;
+  /** Bedrock AI analysis configuration (optional) */
+  bedrockConfig?: BedrockConfig;
 }
 
 /**
@@ -139,6 +240,31 @@ export interface APNSPayload {
     topService: string;
     /** Unique alert identifier */
     alertId: string;
+    /** Projected monthly cost */
+    projectedMonthly?: number;
+    /** AI insights data (optional) */
+    aiInsights?: {
+      /** AI-generated summary (truncated for mobile) */
+      summary: string;
+      /** AI confidence score */
+      confidenceScore: number;
+      /** Key insights (truncated, max 3) */
+      keyInsights: string[];
+      /** Whether anomalies were detected */
+      hasAnomalies: boolean;
+      /** Top optimization recommendation */
+      topRecommendation?: {
+        category: 'RIGHTSIZING' | 'RESERVED_INSTANCES' | 'SPOT_INSTANCES' | 'STORAGE_OPTIMIZATION' | 'OTHER';
+        service: string;
+        description: string;
+        estimatedSavings?: number;
+        priority: 'LOW' | 'MEDIUM' | 'HIGH';
+      } | null;
+    } | null;
+    /** Whether AI analysis fallback was used */
+    fallbackUsed?: boolean;
+    /** Analysis timestamp */
+    analysisTimestamp?: string;
   };
 }
 

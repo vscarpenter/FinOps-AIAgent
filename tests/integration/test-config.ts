@@ -20,6 +20,13 @@ export interface IntegrationTestConfig {
     baseDelay: number;
     maxDelay: number;
   };
+  ai?: {
+    enabled: boolean;
+    modelId: string;
+    costThreshold: number;
+    rateLimitPerMinute: number;
+    performanceThreshold: number;
+  };
 }
 
 export const DEFAULT_INTEGRATION_CONFIG: IntegrationTestConfig = {
@@ -36,6 +43,13 @@ export const DEFAULT_INTEGRATION_CONFIG: IntegrationTestConfig = {
     maxAttempts: 3,
     baseDelay: 1000,
     maxDelay: 5000
+  },
+  ai: {
+    enabled: process.env.TEST_BEDROCK_INTEGRATION === 'true',
+    modelId: process.env.TEST_BEDROCK_MODEL_ID || 'amazon.titan-text-express-v1',
+    costThreshold: 10.0, // $10 monthly limit for testing
+    rateLimitPerMinute: 5, // Conservative rate limiting for tests
+    performanceThreshold: 20000 // 20 seconds max for AI operations
   }
 };
 
@@ -84,6 +98,20 @@ export function shouldRunIntegrationTests(): boolean {
  */
 export function shouldRunIOSIntegrationTests(): boolean {
   return shouldRunIntegrationTests() && process.env.TEST_IOS_INTEGRATION === 'true';
+}
+
+/**
+ * Check if Bedrock AI integration tests should run
+ */
+export function shouldRunBedrockIntegrationTests(): boolean {
+  return shouldRunIntegrationTests() && process.env.TEST_BEDROCK_INTEGRATION === 'true';
+}
+
+/**
+ * Check if performance tests should run
+ */
+export function shouldRunPerformanceTests(): boolean {
+  return shouldRunIntegrationTests() && process.env.RUN_PERFORMANCE_TESTS === 'true';
 }
 
 /**
@@ -288,6 +316,89 @@ export class TestValidator {
         alertId: expect.any(String)
       }
     });
+  }
+
+  static validateAIAnalysisResult(result: any): void {
+    expect(result).toMatchObject({
+      summary: expect.any(String),
+      keyInsights: expect.any(Array),
+      confidenceScore: expect.any(Number),
+      analysisTimestamp: expect.any(String),
+      modelUsed: expect.any(String)
+    });
+
+    expect(result.summary.length).toBeGreaterThan(10);
+    expect(result.keyInsights.length).toBeGreaterThan(0);
+    expect(result.confidenceScore).toBeGreaterThanOrEqual(0);
+    expect(result.confidenceScore).toBeLessThanOrEqual(1);
+    
+    if (result.processingCost) {
+      expect(result.processingCost).toBeGreaterThan(0);
+    }
+  }
+
+  static validateAnomalyDetectionResult(result: any): void {
+    expect(result).toMatchObject({
+      anomaliesDetected: expect.any(Boolean),
+      anomalies: expect.any(Array)
+    });
+
+    result.anomalies.forEach((anomaly: any) => {
+      expect(anomaly).toMatchObject({
+        service: expect.any(String),
+        severity: expect.stringMatching(/^(LOW|MEDIUM|HIGH)$/),
+        description: expect.any(String),
+        confidenceScore: expect.any(Number)
+      });
+      
+      expect(anomaly.confidenceScore).toBeGreaterThanOrEqual(0);
+      expect(anomaly.confidenceScore).toBeLessThanOrEqual(1);
+      expect(anomaly.description.length).toBeGreaterThan(10);
+    });
+  }
+
+  static validateOptimizationRecommendations(recommendations: any[]): void {
+    expect(Array.isArray(recommendations)).toBe(true);
+    
+    recommendations.forEach(recommendation => {
+      expect(recommendation).toMatchObject({
+        category: expect.stringMatching(/^(RIGHTSIZING|RESERVED_INSTANCES|SPOT_INSTANCES|STORAGE_OPTIMIZATION|OTHER)$/),
+        service: expect.any(String),
+        description: expect.any(String),
+        priority: expect.stringMatching(/^(LOW|MEDIUM|HIGH)$/),
+        implementationComplexity: expect.stringMatching(/^(EASY|MEDIUM|COMPLEX)$/)
+      });
+
+      expect(recommendation.description.length).toBeGreaterThan(10);
+      
+      if (recommendation.estimatedSavings) {
+        expect(recommendation.estimatedSavings).toBeGreaterThan(0);
+      }
+    });
+  }
+
+  static validateEnhancedCostAnalysis(enhancedAnalysis: any): void {
+    // Validate base cost analysis
+    TestValidator.validateCostAnalysis(enhancedAnalysis);
+
+    // Validate AI enhancements
+    if (enhancedAnalysis.aiAnalysis) {
+      TestValidator.validateAIAnalysisResult(enhancedAnalysis.aiAnalysis);
+    }
+
+    if (enhancedAnalysis.anomalies) {
+      TestValidator.validateAnomalyDetectionResult(enhancedAnalysis.anomalies);
+    }
+
+    if (enhancedAnalysis.recommendations) {
+      TestValidator.validateOptimizationRecommendations(enhancedAnalysis.recommendations);
+    }
+
+    if (enhancedAnalysis.aiProcessingTime) {
+      expect(enhancedAnalysis.aiProcessingTime).toBeGreaterThan(0);
+    }
+
+    expect(typeof enhancedAnalysis.fallbackUsed).toBe('boolean');
   }
 }
 

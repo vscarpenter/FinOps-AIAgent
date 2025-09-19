@@ -1,4 +1,10 @@
-import { Agent } from 'strands-agents';
+// Try to import strands-agents, fallback to mock implementation
+let Agent: any;
+try {
+  Agent = require('strands-agents').Agent;
+} catch (error) {
+  Agent = require('./mock-strands-agent').Agent;
+}
 import { CostExplorerClient } from '@aws-sdk/client-cost-explorer';
 import { SNSClient } from '@aws-sdk/client-sns';
 import { SpendMonitorConfig, CostAnalysis, AlertContext } from './types';
@@ -6,6 +12,7 @@ import { validateSpendMonitorConfig } from './validation';
 import { CostAnalysisTool } from './tools/cost-analysis-tool';
 import { AlertTool } from './tools/alert-tool';
 import { iOSManagementTool } from './tools/ios-management-tool';
+import { BedrockAnalysisTool } from './tools/bedrock-analysis-tool';
 import { SpendMonitorTask } from './tasks/spend-monitor-task';
 import { iOSMonitoringService } from './utils/ios-monitoring';
 import { createLogger } from './utils/logger';
@@ -24,6 +31,7 @@ export class SpendMonitorAgent extends Agent {
   private costAnalysisTool?: CostAnalysisTool;
   private alertTool?: AlertTool;
   private iosManagementTool?: iOSManagementTool;
+  private bedrockTool?: BedrockAnalysisTool;
   private spendMonitorTask?: SpendMonitorTask;
   private iosMonitoringService?: iOSMonitoringService;
   private agentLogger = createLogger('SpendMonitorAgent');
@@ -153,6 +161,62 @@ export class SpendMonitorAgent extends Agent {
         } catch (error) {
           this.agentLogger.error('iOS health check failed during initialization', error as Error);
           console.warn('iOS health check failed - iOS notifications may not work properly');
+        }
+      }
+
+      // Initialize Bedrock Analysis Tool if Bedrock config is provided
+      if (this.config.bedrockConfig?.enabled) {
+        this.bedrockTool = new BedrockAnalysisTool(
+          this.config.bedrockConfig,
+          { maxAttempts: this.config.retryAttempts }
+        );
+        this.registerTool(this.bedrockTool);
+        
+        // Perform Bedrock health check during initialization
+        try {
+          const isBedrockHealthy = await this.bedrockTool.validateModelAccess();
+          
+          if (isBedrockHealthy) {
+            this.agentLogger.info('Bedrock model access validated successfully', {
+              modelId: this.config.bedrockConfig.modelId,
+              region: this.config.bedrockConfig.region
+            });
+            console.log('Bedrock Analysis Tool registered and health check passed');
+            
+            // Record successful health check metric
+            await this.metrics.recordBedrockHealthCheck(
+              this.config.bedrockConfig.modelId,
+              true
+            );
+          } else {
+            this.agentLogger.warn('Bedrock model access validation failed during initialization', {
+              modelId: this.config.bedrockConfig.modelId,
+              region: this.config.bedrockConfig.region
+            });
+            console.warn('WARNING: Bedrock AI analysis may not work - check model access permissions');
+            
+            // Record failed health check metric
+            await this.metrics.recordBedrockHealthCheck(
+              this.config.bedrockConfig.modelId,
+              false,
+              undefined,
+              'AccessValidationFailed'
+            );
+          }
+        } catch (error) {
+          this.agentLogger.error('Bedrock health check failed during initialization', error as Error, {
+            modelId: this.config.bedrockConfig.modelId,
+            region: this.config.bedrockConfig.region
+          });
+          console.warn('Bedrock health check failed - AI analysis may not work properly');
+          
+          // Record failed health check metric with error type
+          await this.metrics.recordBedrockHealthCheck(
+            this.config.bedrockConfig.modelId,
+            false,
+            undefined,
+            error instanceof Error ? error.name : 'UnknownError'
+          );
         }
       }
 
@@ -368,6 +432,7 @@ export class SpendMonitorAgent extends Agent {
       costAnalysis: 'healthy' | 'unhealthy';
       alerts: 'healthy' | 'unhealthy';
       ios?: 'healthy' | 'unhealthy';
+      bedrock?: 'healthy' | 'unhealthy';
       tasks: 'healthy' | 'unhealthy';
     };
     errors: string[];
@@ -417,6 +482,25 @@ export class SpendMonitorAgent extends Agent {
       } catch (error) {
         components.ios = 'unhealthy';
         errors.push(`iOS Management Tool error: ${error}`);
+      }
+    }
+
+    // Check Bedrock AI Analysis if enabled
+    if (this.config.bedrockConfig?.enabled) {
+      try {
+        if (this.bedrockTool) {
+          const isBedrockHealthy = await this.bedrockTool.validateModelAccess();
+          components.bedrock = isBedrockHealthy ? 'healthy' : 'unhealthy';
+          if (!isBedrockHealthy) {
+            errors.push('Bedrock model access validation failed');
+          }
+        } else {
+          components.bedrock = 'unhealthy';
+          errors.push('Bedrock Analysis Tool not initialized');
+        }
+      } catch (error) {
+        components.bedrock = 'unhealthy';
+        errors.push(`Bedrock Analysis Tool error: ${error}`);
       }
     }
 

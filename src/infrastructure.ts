@@ -96,6 +96,72 @@ export class SpendMonitorStack extends cdk.Stack {
       resources: ['*']
     }));
 
+    // IAM permissions for AWS Bedrock (AI-enhanced cost analysis)
+    const bedrockEnabled = this.node.tryGetContext('bedrockEnabled') === 'true';
+    const bedrockModelId = this.node.tryGetContext('bedrockModelId') || 'amazon.titan-text-express-v1';
+    const bedrockRegion = this.node.tryGetContext('bedrockRegion') || this.region;
+    const bedrockCostThreshold = this.node.tryGetContext('bedrockCostThreshold') || '50';
+
+    if (bedrockEnabled) {
+      // Bedrock InvokeModel permissions with least-privilege access to specific Titan models
+      agentFunction.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock:InvokeModel'
+        ],
+        resources: [
+          `arn:aws:bedrock:${bedrockRegion}::foundation-model/amazon.titan-text-express-v1`,
+          `arn:aws:bedrock:${bedrockRegion}::foundation-model/amazon.titan-text-lite-v1`,
+          `arn:aws:bedrock:${bedrockRegion}::foundation-model/amazon.titan-embed-text-v1`
+        ],
+        conditions: {
+          StringEquals: {
+            'bedrock:ModelId': [
+              'amazon.titan-text-express-v1',
+              'amazon.titan-text-lite-v1',
+              'amazon.titan-embed-text-v1'
+            ]
+          }
+        }
+      }));
+
+      // Cost control policy for Bedrock API usage - deny requests if monthly spend exceeds threshold
+      const bedrockCostControlPolicy = new iam.Policy(this, 'BedrockCostControlPolicy', {
+        policyName: 'SpendMonitor-BedrockCostControl',
+        statements: [
+          new iam.PolicyStatement({
+            effect: iam.Effect.DENY,
+            actions: [
+              'bedrock:InvokeModel'
+            ],
+            resources: ['*'],
+            conditions: {
+              NumericGreaterThan: {
+                'aws:RequestedRegion': bedrockCostThreshold
+              }
+            }
+          })
+        ]
+      });
+
+      // Attach cost control policy to the Lambda execution role
+      agentFunction.role?.attachInlinePolicy(bedrockCostControlPolicy);
+
+      // Add Bedrock configuration to Lambda environment
+      agentFunction.addEnvironment('BEDROCK_ENABLED', 'true');
+      agentFunction.addEnvironment('BEDROCK_MODEL_ID', bedrockModelId);
+      agentFunction.addEnvironment('BEDROCK_REGION', bedrockRegion);
+      agentFunction.addEnvironment('BEDROCK_COST_THRESHOLD', bedrockCostThreshold);
+      agentFunction.addEnvironment('BEDROCK_RATE_LIMIT_PER_MINUTE', this.node.tryGetContext('bedrockRateLimit') || '10');
+      agentFunction.addEnvironment('BEDROCK_MAX_TOKENS', this.node.tryGetContext('bedrockMaxTokens') || '1000');
+      agentFunction.addEnvironment('BEDROCK_TEMPERATURE', this.node.tryGetContext('bedrockTemperature') || '0.1');
+      agentFunction.addEnvironment('BEDROCK_CACHE_TTL_MINUTES', this.node.tryGetContext('bedrockCacheTTL') || '60');
+      agentFunction.addEnvironment('BEDROCK_LOG_LEVEL', this.node.tryGetContext('bedrockLogLevel') || 'INFO');
+      agentFunction.addEnvironment('BEDROCK_ENABLE_DETAILED_LOGGING', this.node.tryGetContext('bedrockDetailedLogging') || 'true');
+    } else {
+      agentFunction.addEnvironment('BEDROCK_ENABLED', 'false');
+    }
+
     // Grant SNS publish permissions
     alertTopic.grantPublish(agentFunction);
 
@@ -277,6 +343,82 @@ export class SpendMonitorStack extends cdk.Stack {
       ],
       resources: ['*']
     }));
+
+    // Security validation for Bedrock permissions
+    if (bedrockEnabled) {
+      // Create a custom resource to validate Bedrock permissions during deployment
+      const bedrockValidationFunction = new lambda.Function(this, 'BedrockValidationFunction', {
+        runtime: lambda.Runtime.NODEJS_18_X,
+        handler: 'bedrock-validation.handler',
+        code: lambda.Code.fromInline(`
+          const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+          
+          exports.handler = async (event) => {
+            console.log('Validating Bedrock permissions and model access...');
+            
+            if (event.RequestType === 'Delete') {
+              return { Status: 'SUCCESS', PhysicalResourceId: 'bedrock-validation' };
+            }
+            
+            try {
+              const client = new BedrockRuntimeClient({ region: '${bedrockRegion}' });
+              
+              // Test model access with minimal request
+              const testCommand = new InvokeModelCommand({
+                modelId: '${bedrockModelId}',
+                body: JSON.stringify({
+                  inputText: 'Test access',
+                  textGenerationConfig: {
+                    maxTokenCount: 10,
+                    temperature: 0.1
+                  }
+                }),
+                contentType: 'application/json',
+                accept: 'application/json'
+              });
+              
+              await client.send(testCommand);
+              console.log('Bedrock model access validation successful');
+              
+              return { 
+                Status: 'SUCCESS', 
+                PhysicalResourceId: 'bedrock-validation',
+                Data: { ValidationResult: 'SUCCESS' }
+              };
+            } catch (error) {
+              console.error('Bedrock validation failed:', error);
+              return { 
+                Status: 'FAILED', 
+                PhysicalResourceId: 'bedrock-validation',
+                Reason: \`Bedrock validation failed: \${error.message}\`
+              };
+            }
+          };
+        `),
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 128
+      });
+
+      // Grant Bedrock permissions to validation function
+      bedrockValidationFunction.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['bedrock:InvokeModel'],
+        resources: [`arn:aws:bedrock:${bedrockRegion}::foundation-model/${bedrockModelId}`]
+      }));
+
+      // Create custom resource for validation
+      const bedrockValidation = new cdk.CustomResource(this, 'BedrockValidation', {
+        serviceToken: bedrockValidationFunction.functionArn,
+        properties: {
+          ModelId: bedrockModelId,
+          Region: bedrockRegion,
+          Timestamp: Date.now() // Force update on each deployment
+        }
+      });
+
+      // Add dependency to ensure validation runs before main function deployment
+      agentFunction.node.addDependency(bedrockValidation);
+    }
 
     // EventBridge rule to trigger daily at configurable time
     const scheduleHour = this.node.tryGetContext('scheduleHour') || '9';
@@ -495,6 +637,113 @@ export class SpendMonitorStack extends cdk.Stack {
     });
     iosRegistrationFailureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
 
+    // Bedrock-specific CloudWatch Alarms (only if Bedrock is enabled)
+    if (bedrockEnabled) {
+      // Bedrock API call failure alarm
+      const bedrockApiFailureAlarm = new cloudwatch.Alarm(this, 'BedrockApiFailureAlarm', {
+        alarmName: 'SpendMonitor-BedrockApiFailures',
+        alarmDescription: 'Alarm for Bedrock API call failures',
+        metric: new cloudwatch.Metric({
+          namespace: 'SpendMonitor/Bedrock',
+          metricName: 'ExecutionCount',
+          dimensionsMap: {
+            Operation: 'BedrockAnalysis',
+            Status: 'Failure'
+          },
+          period: cdk.Duration.minutes(5),
+          statistic: 'Sum'
+        }),
+        threshold: 2, // Alert after 2 consecutive failures
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+      });
+      bedrockApiFailureAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+      // Bedrock cost threshold alarm
+      const bedrockCostAlarm = new cloudwatch.Alarm(this, 'BedrockCostAlarm', {
+        alarmName: 'SpendMonitor-BedrockCostThreshold',
+        alarmDescription: 'Alarm for Bedrock API usage costs exceeding threshold',
+        metric: new cloudwatch.Metric({
+          namespace: 'SpendMonitor/Bedrock',
+          metricName: 'BedrockCostUSD',
+          period: cdk.Duration.hours(1),
+          statistic: 'Sum'
+        }),
+        threshold: parseFloat(bedrockCostThreshold) * 0.8, // Alert at 80% of threshold
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+      });
+      bedrockCostAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+      // Bedrock rate limiting alarm
+      const bedrockRateLimitAlarm = new cloudwatch.Alarm(this, 'BedrockRateLimitAlarm', {
+        alarmName: 'SpendMonitor-BedrockRateLimit',
+        alarmDescription: 'Alarm for Bedrock API rate limiting events',
+        metric: new cloudwatch.Metric({
+          namespace: 'SpendMonitor/Bedrock',
+          metricName: 'BedrockRateLimited',
+          period: cdk.Duration.minutes(5),
+          statistic: 'Sum'
+        }),
+        threshold: 1, // Alert on any rate limiting
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+      });
+      bedrockRateLimitAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+      // Bedrock response time alarm
+      const bedrockResponseTimeAlarm = new cloudwatch.Alarm(this, 'BedrockResponseTimeAlarm', {
+        alarmName: 'SpendMonitor-BedrockResponseTime',
+        alarmDescription: 'Alarm for high Bedrock API response times',
+        metric: new cloudwatch.Metric({
+          namespace: 'SpendMonitor/Bedrock',
+          metricName: 'BedrockResponseTimeMs',
+          period: cdk.Duration.minutes(5),
+          statistic: 'Average'
+        }),
+        threshold: 10000, // Alert if average response time > 10 seconds
+        evaluationPeriods: 2,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+      });
+      bedrockResponseTimeAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+      // Bedrock model access failure alarm
+      const bedrockModelAccessAlarm = new cloudwatch.Alarm(this, 'BedrockModelAccessAlarm', {
+        alarmName: 'SpendMonitor-BedrockModelAccess',
+        alarmDescription: 'Alarm for Bedrock model access validation failures',
+        metric: new cloudwatch.Metric({
+          namespace: 'SpendMonitor/Bedrock',
+          metricName: 'ExecutionCount',
+          dimensionsMap: {
+            Operation: 'ModelAccessValidation',
+            Status: 'Failure'
+          },
+          period: cdk.Duration.minutes(15),
+          statistic: 'Sum'
+        }),
+        threshold: 1, // Alert on any model access failure
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+      });
+      bedrockModelAccessAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+
+      // Bedrock AI analysis disabled alarm (when cost limits are exceeded)
+      const bedrockDisabledAlarm = new cloudwatch.Alarm(this, 'BedrockDisabledAlarm', {
+        alarmName: 'SpendMonitor-BedrockDisabled',
+        alarmDescription: 'Alarm when Bedrock AI analysis is disabled due to cost limits',
+        metric: new cloudwatch.Metric({
+          namespace: 'SpendMonitor/Bedrock',
+          metricName: 'BedrockDisabled',
+          period: cdk.Duration.minutes(5),
+          statistic: 'Maximum'
+        }),
+        threshold: 1, // Alert when AI analysis is disabled
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING
+      });
+      bedrockDisabledAlarm.addAlarmAction(new cloudwatchActions.SnsAction(operationalAlertTopic));
+    }
+
     // CloudWatch Dashboard for monitoring
     const dashboard = new cloudwatch.Dashboard(this, 'SpendMonitorDashboard', {
       dashboardName: 'SpendMonitorAgent',
@@ -696,7 +945,166 @@ export class SpendMonitorStack extends cdk.Stack {
             width: 12,
             height: 6
           })
-        ]
+        ],
+        // Bedrock AI Analysis Widgets (only if Bedrock is enabled)
+        ...(bedrockEnabled ? [
+          [
+            new cloudwatch.GraphWidget({
+              title: 'Bedrock AI Analysis Metrics',
+              left: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'ExecutionCount',
+                  dimensionsMap: { 
+                    Operation: 'BedrockAnalysis',
+                    Status: 'Success'
+                  },
+                  period: cdk.Duration.minutes(15),
+                  statistic: 'Sum'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'ExecutionCount',
+                  dimensionsMap: { 
+                    Operation: 'BedrockAnalysis',
+                    Status: 'Failure'
+                  },
+                  period: cdk.Duration.minutes(15),
+                  statistic: 'Sum'
+                })
+              ],
+              right: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockResponseTimeMs',
+                  period: cdk.Duration.minutes(15),
+                  statistic: 'Average'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockTokensUsed',
+                  period: cdk.Duration.minutes(15),
+                  statistic: 'Sum'
+                })
+              ],
+              width: 12,
+              height: 6
+            })
+          ],
+          [
+            new cloudwatch.GraphWidget({
+              title: 'Bedrock Cost and Usage Monitoring',
+              left: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockCostUSD',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockApiCalls',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                })
+              ],
+              right: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockRateLimited',
+                  period: cdk.Duration.minutes(15),
+                  statistic: 'Sum'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockDisabled',
+                  period: cdk.Duration.minutes(15),
+                  statistic: 'Maximum'
+                })
+              ],
+              width: 12,
+              height: 6
+            })
+          ],
+          [
+            new cloudwatch.GraphWidget({
+              title: 'Bedrock AI Insights Quality',
+              left: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockConfidenceScore',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Average'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockAnomaliesDetected',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                })
+              ],
+              right: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockRecommendationsGenerated',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockCacheHitRate',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Average'
+                })
+              ],
+              width: 12,
+              height: 6
+            })
+          ],
+          [
+            new cloudwatch.GraphWidget({
+              title: 'Bedrock Model Access and Health',
+              left: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'ExecutionCount',
+                  dimensionsMap: { 
+                    Operation: 'ModelAccessValidation',
+                    Status: 'Success'
+                  },
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'ExecutionCount',
+                  dimensionsMap: { 
+                    Operation: 'ModelAccessValidation',
+                    Status: 'Failure'
+                  },
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                })
+              ],
+              right: [
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockFallbackUsed',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                }),
+                new cloudwatch.Metric({
+                  namespace: 'SpendMonitor/Bedrock',
+                  metricName: 'BedrockModelErrors',
+                  period: cdk.Duration.hours(1),
+                  statistic: 'Sum'
+                })
+              ],
+              width: 12,
+              height: 6
+            })
+          ]
+        ] : [])
       ]
     });
 
@@ -752,5 +1160,38 @@ export class SpendMonitorStack extends cdk.Stack {
       value: deviceRegistrationFunction.functionName,
       description: 'Lambda function name for device registration API'
     });
+
+    // Bedrock-specific outputs (only if enabled)
+    if (bedrockEnabled) {
+      new cdk.CfnOutput(this, 'BedrockEnabled', {
+        value: 'true',
+        description: 'Bedrock AI analysis is enabled'
+      });
+
+      new cdk.CfnOutput(this, 'BedrockModelId', {
+        value: bedrockModelId,
+        description: 'Bedrock model ID used for AI analysis'
+      });
+
+      new cdk.CfnOutput(this, 'BedrockRegion', {
+        value: bedrockRegion,
+        description: 'AWS region for Bedrock service'
+      });
+
+      new cdk.CfnOutput(this, 'BedrockCostThreshold', {
+        value: bedrockCostThreshold,
+        description: 'Monthly cost threshold for Bedrock usage (USD)'
+      });
+
+      new cdk.CfnOutput(this, 'BedrockDashboardURL', {
+        value: `https://${this.region}.console.aws.amazon.com/cloudwatch/home?region=${this.region}#dashboards:name=${dashboard.dashboardName}`,
+        description: 'CloudWatch Dashboard URL with Bedrock metrics'
+      });
+    } else {
+      new cdk.CfnOutput(this, 'BedrockEnabled', {
+        value: 'false',
+        description: 'Bedrock AI analysis is disabled'
+      });
+    }
   }
 }
