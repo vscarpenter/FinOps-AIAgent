@@ -1,4 +1,4 @@
-import { Tool } from 'strands-agents';
+import { Tool } from '../mock-strands-agent';
 import { CostExplorerClient, GetCostAndUsageCommand, GetCostAndUsageCommandInput } from '@aws-sdk/client-cost-explorer';
 import { CostAnalysis, ServiceCost, RetryConfig, EnhancedCostAnalysis, BedrockConfig, OptimizationRecommendation } from '../types';
 import { BedrockAnalysisTool } from './bedrock-analysis-tool';

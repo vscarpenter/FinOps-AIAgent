@@ -1,4 +1,4 @@
-import { SpendMonitorConfig, iOSPushConfig, iOSDeviceRegistration } from './types';
+import { SpendMonitorConfig, iOSPushConfig, iOSDeviceRegistration, BedrockCostInsightsConfig } from './types';
 
 /**
  * Validation error class for configuration issues
@@ -53,6 +53,10 @@ export function validateSpendMonitorConfig(config: Partial<SpendMonitorConfig>):
     validateiOSPushConfig(config.iosConfig, errors);
   }
 
+  if (config.bedrockConfig) {
+    validateBedrockConfig(config.bedrockConfig, errors);
+  }
+
   if (errors.length > 0) {
     throw new ValidationError(`Configuration validation failed: ${errors.join(', ')}`);
   }
@@ -84,6 +88,37 @@ export function validateiOSPushConfig(config: iOSPushConfig, errors: string[] = 
 
   if (config.apnsPrivateKeyPath && typeof config.apnsPrivateKeyPath !== 'string') {
     errors.push('iOS config: apnsPrivateKeyPath must be a string if provided');
+  }
+}
+
+/**
+ * Validates Bedrock configuration for cost insights
+ */
+export function validateBedrockConfig(config: BedrockCostInsightsConfig, errors: string[] = []): void {
+  if (!config.modelId || typeof config.modelId !== 'string') {
+    errors.push('bedrockConfig.modelId is required and must be a string');
+  }
+
+  if (config.region && typeof config.region !== 'string') {
+    errors.push('bedrockConfig.region must be a string if provided');
+  }
+
+  if (config.maxOutputTokens !== undefined) {
+    if (typeof config.maxOutputTokens !== 'number' || config.maxOutputTokens <= 0) {
+      errors.push('bedrockConfig.maxOutputTokens must be a positive number if provided');
+    }
+  }
+
+  if (config.temperature !== undefined) {
+    if (typeof config.temperature !== 'number' || config.temperature < 0 || config.temperature > 1) {
+      errors.push('bedrockConfig.temperature must be between 0 and 1 if provided');
+    }
+  }
+
+  if (config.topP !== undefined) {
+    if (typeof config.topP !== 'number' || config.topP <= 0 || config.topP > 1) {
+      errors.push('bedrockConfig.topP must be between 0 (exclusive) and 1 (inclusive) if provided');
+    }
   }
 }
 

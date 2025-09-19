@@ -189,7 +189,6 @@ check_dependencies() {
     if [[ -f "package.json" ]]; then
         if command -v jq &> /dev/null; then
             local required_deps=(
-                "strands-agents"
                 "@aws-sdk/client-cost-explorer"
                 "@aws-sdk/client-sns"
                 "@aws-sdk/client-lambda"
@@ -210,6 +209,26 @@ check_dependencies() {
     else
         print_error "package.json not found"
     fi
+}
+
+# Guard against stray 'strands-agents' requires in artifacts
+check_for_strands_agents() {
+    print_info "Scanning build artifacts for unexpected 'strands-agents' references..."
+    local found=0
+    if rg -n "strands-agents" dist/ >/dev/null 2>&1; then
+        print_error "Found 'strands-agents' reference in dist/"
+        rg -n "strands-agents" dist/ || true
+        found=1
+    fi
+    if rg -n "strands-agents" fresh-deployment/ >/dev/null 2>&1; then
+        print_error "Found 'strands-agents' reference in fresh-deployment/"
+        rg -n "strands-agents" fresh-deployment/ || true
+        found=1
+    fi
+    if [[ $found -eq 1 ]]; then
+        return 1
+    fi
+    print_success "No unexpected 'strands-agents' references detected"
 }
 
 check_typescript_compilation() {
@@ -548,6 +567,9 @@ main() {
     fi
     
     check_configuration
+
+    # Scan artifacts for unexpected 'strands-agents' references
+    check_for_strands_agents || VALIDATION_ERRORS=$((VALIDATION_ERRORS+1))
     
     if [[ "$SKIP_IAM" != "true" ]]; then
         check_iam_permissions

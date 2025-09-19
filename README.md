@@ -30,6 +30,7 @@ This FinOps AI Agent is a production-ready platform that combines:
 - **🧠 Intelligent Cost Monitoring** - AI-powered AWS spend analysis with trend detection
 - **📱 iOS Device Management** - Complete APNS integration with device lifecycle management
 - **🔔 Multi-Channel Alerting** - Email, SMS, and iOS push notifications with intelligent fallback
+- **🤖 AI-Assisted Insights** - Optional Bedrock-powered summaries for cost anomalies
 - **🔧 Automated Recovery** - Self-healing capabilities with comprehensive health monitoring
 - **📊 Enterprise Observability** - Full metrics, logging, and operational dashboards
 
@@ -123,8 +124,27 @@ npm run validate:pre-deploy
 npm run deploy
 # or: cdk deploy
 
+# Include Bedrock config via CDK context
+cdk deploy \
+  -c bedrockModelId=amazon.titan-text-lite-v1 \
+  -c bedrockRegion=us-east-1 \
+  -c bedrockMaxTokens=256 \
+  -c bedrockTemperature=0.2 \
+  -c bedrockTopP=0.9
+
 # Validate deployment success
 npm run validate:deployment
+
+### Post‑Deploy Verification
+After deployment, you can verify that the correct code is running and that the agent is behaving as expected:
+
+- Verify deployed Lambda bundle is clean (no stale requires)
+  - npm run verify:lambda-bundle -- <LambdaFunctionName>
+  - This downloads the live bundle from AWS and scans for unexpected references like `strands-agents`.
+
+- Force the alert path once and scan logs
+  - npm run test:deployment
+  - Temporarily lowers `SPEND_THRESHOLD` to 0.01, invokes the Lambda, scans logs for alert messages, and restores the original environment.
 ```
 
 ### iOS Configuration (Optional)
@@ -153,6 +173,13 @@ SNS_TOPIC_ARN=arn:aws:sns:us-east-1:123456789012:cost-alerts
 # Optional (for iOS)
 IOS_PLATFORM_APPLICATION_ARN=arn:aws:sns:us-east-1:123456789012:app/APNS/YourApp
 IOS_BUNDLE_ID=com.yourcompany.yourapp
+
+# Optional (for Bedrock insights)
+BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
+BEDROCK_REGION=us-east-1
+BEDROCK_MAX_TOKENS=256
+BEDROCK_TEMPERATURE=0.2
+BEDROCK_TOP_P=0.9
 ```
 
 ## 🧪 Testing
@@ -184,6 +211,46 @@ npm run test:local
 # Test device registration API
 npm run test:device-api
 ```
+
+### Live Deployment Test (Alert Path)
+After deploying, you can validate the Lambda end‑to‑end in your AWS account using the included helper script. It temporarily lowers `SPEND_THRESHOLD` to force the alert path, invokes the function, scans logs for alert messages, and then restores the original environment.
+
+```bash
+# Quick run (resolves function from CloudFormation outputs)
+npm run test:deployment
+
+# Equivalent direct script usage
+scripts/test-deployment.sh --stack-name SpendMonitorStack
+
+# Specify function name explicitly
+scripts/test-deployment.sh --function-name SpendMonitorStack-SpendMonitorAgentV2-<id>
+
+# Options
+#   -r/--region REGION      AWS region (default env or us-east-1)
+#   --since MINUTES         Minutes to scan logs (default 10)
+#   --keep-threshold        Do not restore the original SPEND_THRESHOLD
+```
+
+The script prints the Lambda invocation result and any recent log lines matching:
+- "Spending threshold exceeded"
+- "Alert sent successfully"
+- "Simplified alert sent successfully"
+
+## 🧩 Troubleshooting
+
+- Lambda fails with "Cannot find module 'strands-agents'"
+  - Cause: stale artifact deployed. Fix by rebuilding and verifying the live bundle:
+    - npm run build
+    - npm run verify:lambda-bundle -- <LambdaFunctionName>
+    - If found, redeploy (./deploy.sh) which now syncs `dist/` → `fresh-deployment/` and blocks on stray references.
+
+- Lambda creation fails with "Unzipped size must be smaller than 262144000 bytes"
+  - The deployment now installs production‑only dependencies into `fresh-deployment/` during `./deploy.sh`.
+  - If you see this again, run a clean deploy:
+    - ./deploy.sh --clean --skip-tests
+
+- Jest error: missing `strands-agents` module in tests
+  - Tests use a virtual mock declared in `tests/setup.ts`. If running Jest directly outside this repo setup, ensure `setupFilesAfterEnv` includes `tests/setup.ts`.
 
 ### Validation Scripts
 ```bash

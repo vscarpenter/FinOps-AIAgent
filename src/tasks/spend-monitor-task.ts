@@ -1,4 +1,4 @@
-import { Task } from 'strands-agents';
+import { Task } from '../mock-strands-agent';
 import { SpendMonitorConfig, CostAnalysis, AlertContext } from '../types';
 import { validateSpendMonitorConfig } from '../validation';
 

@@ -1,4 +1,4 @@
-import { Tool } from 'strands-agents';
+import { Tool } from '../mock-strands-agent';
 import { SNSClient, CreatePlatformEndpointCommand, DeleteEndpointCommand, GetEndpointAttributesCommand, SetEndpointAttributesCommand, GetPlatformApplicationAttributesCommand, ListEndpointsByPlatformApplicationCommand } from '@aws-sdk/client-sns';
 import { iOSPushConfig, iOSDeviceRegistration } from '../types';
 import { validateiOSDeviceRegistration, ValidationError } from '../validation';

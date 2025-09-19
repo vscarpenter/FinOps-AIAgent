@@ -61,25 +61,39 @@ export class SpendMonitorStack extends cdk.Stack {
       }
     });
 
+    const stackRegion = cdk.Stack.of(this).region;
+    const bedrockModelId = this.node.tryGetContext('bedrockModelId');
+    const bedrockRegion = this.node.tryGetContext('bedrockRegion') || stackRegion;
+    const bedrockMaxTokens = this.node.tryGetContext('bedrockMaxTokens');
+    const bedrockTemperature = this.node.tryGetContext('bedrockTemperature');
+    const bedrockTopP = this.node.tryGetContext('bedrockTopP');
+
+    const lambdaEnvironment: { [key: string]: string } = {
+      SNS_TOPIC_ARN: alertTopic.topicArn,
+      SPEND_THRESHOLD: this.node.tryGetContext('spendThreshold') || '10',
+      CHECK_PERIOD_DAYS: this.node.tryGetContext('checkPeriodDays') || '1',
+      RETRY_ATTEMPTS: this.node.tryGetContext('retryAttempts') || '3',
+      MIN_SERVICE_COST: this.node.tryGetContext('minServiceCost') || '1',
+      IOS_PLATFORM_APP_ARN: iosPlatformApp?.ref || '',
+      IOS_BUNDLE_ID: this.node.tryGetContext('iosBundleId') || 'com.example.spendmonitor',
+      APNS_SANDBOX: this.node.tryGetContext('apnsSandbox') || 'true',
+      DEVICE_TOKEN_TABLE_NAME: deviceTokenTable.tableName,
+      BEDROCK_MODEL_ID: bedrockModelId || '',
+      BEDROCK_REGION: bedrockRegion || '',
+      BEDROCK_MAX_TOKENS: bedrockMaxTokens || '',
+      BEDROCK_TEMPERATURE: bedrockTemperature || '',
+      BEDROCK_TOP_P: bedrockTopP || ''
+    };
+
     // Lambda function for the Strands agent
-    const agentFunction = new lambda.Function(this, 'SpendMonitorAgent', {
+    const agentFunction = new lambda.Function(this, 'SpendMonitorAgentV2', {
       runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset('dist'),
+      code: lambda.Code.fromAsset('fresh-deployment'),
       timeout: cdk.Duration.minutes(5),
       memorySize: 512, // Increased memory for iOS processing
       logGroup: logGroup,
-      environment: {
-        SNS_TOPIC_ARN: alertTopic.topicArn,
-        SPEND_THRESHOLD: this.node.tryGetContext('spendThreshold') || '10',
-        CHECK_PERIOD_DAYS: this.node.tryGetContext('checkPeriodDays') || '1',
-        RETRY_ATTEMPTS: this.node.tryGetContext('retryAttempts') || '3',
-        MIN_SERVICE_COST: this.node.tryGetContext('minServiceCost') || '1',
-        IOS_PLATFORM_APP_ARN: iosPlatformApp?.ref || '',
-        IOS_BUNDLE_ID: this.node.tryGetContext('iosBundleId') || 'com.example.spendmonitor',
-        APNS_SANDBOX: this.node.tryGetContext('apnsSandbox') || 'true',
-        DEVICE_TOKEN_TABLE_NAME: deviceTokenTable.tableName
-      }
+      environment: lambdaEnvironment
     });
 
     // IAM permissions for Cost Explorer
@@ -184,6 +198,15 @@ export class SpendMonitorStack extends cdk.Stack {
       }));
     }
 
+    if (bedrockModelId) {
+      const bedrockArn = `arn:aws:bedrock:${bedrockRegion || stackRegion}::foundation-model/${bedrockModelId}`;
+      agentFunction.addToRolePolicy(new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['bedrock:InvokeModel'],
+        resources: [bedrockArn]
+      }));
+    }
+
     // Grant DynamoDB permissions for device token management
     deviceTokenTable.grantReadWriteData(agentFunction);
 
@@ -191,7 +214,7 @@ export class SpendMonitorStack extends cdk.Stack {
     const deviceRegistrationFunction = new lambda.Function(this, 'DeviceRegistrationFunction', {
       runtime: lambda.Runtime.NODEJS_18_X,
       handler: 'device-registration-index.handler',
-      code: lambda.Code.fromAsset('dist'),
+      code: lambda.Code.fromAsset('fresh-deployment'),
       timeout: cdk.Duration.seconds(30),
       memorySize: 256,
       environment: {
