@@ -12,40 +12,39 @@ jest.mock('@aws-sdk/client-sns', () => ({
   SNSClient: jest.fn().mockImplementation(() => ({
     send: jest.fn()
   })),
-  PublishCommand: jest.fn()
+  PublishCommand: jest.fn(),
+  CreatePlatformEndpointCommand: jest.fn(),
+  SetEndpointAttributesCommand: jest.fn(),
+  GetEndpointAttributesCommand: jest.fn(),
+  DeleteEndpointCommand: jest.fn(),
+  ListEndpointsByPlatformApplicationCommand: jest.fn(),
+  GetPlatformApplicationAttributesCommand: jest.fn()
 }));
 
-// Mock strands-agents framework
-jest.mock('strands-agents', () => ({
-  Agent: class MockAgent {
-    protected tools: Map<string, any> = new Map();
-    protected tasks: Map<string, any> = new Map();
-    
-    constructor(protected config: any) {}
-    
-    registerTool(tool: any) {
-      this.tools.set(tool.name, tool);
-    }
-    
-    registerTask(task: any) {
-      this.tasks.set(task.name, task);
-    }
-    
-    getTool(name: string) {
-      return this.tools.get(name);
-    }
-    
-    getTask(name: string) {
-      return this.tasks.get(name);
-    }
-  },
-  Tool: class MockTool {
-    constructor(public name: string, public description: string) {}
-  },
-  Task: class MockTask {
-    constructor(public name: string, public description: string) {}
-  }
-}), { virtual: true });
+// Mock strands-agents framework - use our mock implementation
+jest.mock('strands-agents', () => {
+  const mockStrandsAgent = require('../src/mock-strands-agent');
+  return mockStrandsAgent;
+});
+
+jest.mock('@aws-sdk/client-cloudwatch', () => ({
+  CloudWatchClient: jest.fn().mockImplementation(() => ({
+    send: jest.fn()
+  })),
+  PutMetricDataCommand: jest.fn()
+}));
+
+jest.mock('@aws-sdk/client-dynamodb', () => ({
+  DynamoDBClient: jest.fn().mockImplementation(() => ({
+    send: jest.fn()
+  })),
+  PutItemCommand: jest.fn(),
+  GetItemCommand: jest.fn(),
+  UpdateItemCommand: jest.fn(),
+  DeleteItemCommand: jest.fn(),
+  ScanCommand: jest.fn(),
+  QueryCommand: jest.fn()
+}));
 
 // Set up environment variables for tests
 process.env.AWS_REGION = 'us-east-1';

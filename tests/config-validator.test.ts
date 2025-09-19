@@ -5,27 +5,31 @@
  * iOS settings, AWS service validation, and deployment checks.
  */
 
-import { ConfigValidator, validateEnvironmentVariables, createSampleConfig } from '../src/utils/config-validator';
-import { SpendMonitorConfigValidation, iOSConfigValidation } from '../src/utils/config-validator';
+import { ConfigValidator, validateEnvironmentVariables, createSampleConfig, createSampleBedrockConfigs } from '../src/utils/config-validator';
+import { SpendMonitorConfigValidation, iOSConfigValidation, BedrockConfigValidation } from '../src/utils/config-validator';
 
 // Mock AWS SDK clients
 jest.mock('@aws-sdk/client-sns');
 jest.mock('@aws-sdk/client-cost-explorer');
 jest.mock('@aws-sdk/client-lambda');
+jest.mock('@aws-sdk/client-bedrock-runtime');
 
 import { SNSClient, GetTopicAttributesCommand, GetPlatformApplicationAttributesCommand } from '@aws-sdk/client-sns';
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
 import { LambdaClient, GetFunctionConfigurationCommand } from '@aws-sdk/client-lambda';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 
 const mockSNSClient = SNSClient as jest.MockedClass<typeof SNSClient>;
 const mockCostExplorerClient = CostExplorerClient as jest.MockedClass<typeof CostExplorerClient>;
 const mockLambdaClient = LambdaClient as jest.MockedClass<typeof LambdaClient>;
+const mockBedrockRuntimeClient = BedrockRuntimeClient as jest.MockedClass<typeof BedrockRuntimeClient>;
 
 describe('ConfigValidator', () => {
   let validator: ConfigValidator;
   let mockSNSSend: jest.Mock;
   let mockCostExplorerSend: jest.Mock;
   let mockLambdaSend: jest.Mock;
+  let mockBedrockSend: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -34,10 +38,12 @@ describe('ConfigValidator', () => {
     mockSNSSend = jest.fn();
     mockCostExplorerSend = jest.fn();
     mockLambdaSend = jest.fn();
+    mockBedrockSend = jest.fn();
     
     mockSNSClient.prototype.send = mockSNSSend;
     mockCostExplorerClient.prototype.send = mockCostExplorerSend;
     mockLambdaClient.prototype.send = mockLambdaSend;
+    mockBedrockRuntimeClient.prototype.send = mockBedrockSend;
     
     validator = new ConfigValidator('us-east-1');
   });
@@ -312,6 +318,235 @@ describe('ConfigValidator', () => {
       expect(report).toContain('ℹ All checks passed');
     });
   });
+
+  describe('Bedrock Configuration Validation', () => {
+    it('should validate enabled Bedrock configuration', async () => {
+      const config: SpendMonitorConfigValidation = {
+        spendThreshold: 10,
+        snsTopicArn: 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts',
+        region: 'us-east-1',
+        bedrockConfig: {
+          enabled: true,
+          modelId: 'amazon.titan-text-express-v1',
+          region: 'us-east-1',
+          maxTokens: 1000,
+          temperature: 0.3,
+          costThreshold: 50,
+          rateLimitPerMinute: 10,
+          cacheResults: true,
+          cacheTTLMinutes: 60,
+          fallbackOnError: true
+        }
+      };
+
+      const result = await validator.validateConfiguration(config, { skipAwsValidation: true });
+
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.info).toContain('Bedrock AI analysis: enabled');
+      expect(result.info).toContain('Bedrock model ID: amazon.titan-text-express-v1');
+      expect(result.info).toContain('Bedrock region: us-east-1');
+      expect(result.info).toContain('Bedrock max tokens: 1000');
+      expect(result.info).toContain('Bedrock temperature: 0.3');
+      expect(result.info).toContain('Bedrock monthly cost threshold: $50');
+      expect(result.info).toContain('Bedrock rate limit: 10 calls/minute');
+      expect(result.info).toContain('Bedrock result caching: enabled');
+      expect(result.info).toContain('Bedrock cache TTL: 60 minutes');
+      expect(result.info).toContain('Bedrock error fallback: enabled');
+    });
+
+    it('should validate disabled Bedrock configuration', async () => {
+      const config: SpendMonitorConfigValidation = {
+        spendThreshold: 10,
+        snsTopicArn: 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts',
+        region: 'us-east-1',
+        bedrockConfig: {
+          enabled: false,
+          modelId: 'amazon.titan-text-express-v1',
+          region: 'us-east-1',
+          maxTokens: 1000,
+          temperature: 0.3,
+          costThreshold: 50,
+          rateLimitPerMinute: 10,
+          cacheResults: true,
+          cacheTTLMinutes: 60,
+          fallbackOnError: true
+        }
+      };
+
+      const result = await validator.validateConfiguration(config, { skipAwsValidation: true });
+
+      expect(result.isValid).toBe(true);
+      expect(result.info).toContain('Bedrock AI analysis: disabled');
+      expect(result.warnings).toContain('Bedrock AI analysis is disabled - no AI insights will be available');
+    });
+
+    it('should detect invalid Bedrock model ID', async () => {
+      const config: SpendMonitorConfigValidation = {
+        spendThreshold: 10,
+        snsTopicArn: 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts',
+        region: 'us-east-1',
+        bedrockConfig: {
+          enabled: true,
+          modelId: 'invalid-model-id',
+          region: 'us-east-1',
+          maxTokens: 1000,
+          temperature: 0.3,
+          costThreshold: 50,
+          rateLimitPerMinute: 10,
+          cacheResults: true,
+          cacheTTLMinutes: 60,
+          fallbackOnError: true
+        }
+      };
+
+      const result = await validator.validateConfiguration(config, { skipAwsValidation: true });
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Invalid Bedrock model ID format: invalid-model-id');
+    });
+
+    it('should validate different Titan model IDs', async () => {
+      const validModelIds = [
+        'amazon.titan-text-express-v1',
+        'amazon.titan-text-lite-v1',
+        'amazon.titan-embed-text-v1',
+        'anthropic.claude-v2',
+        'anthropic.claude-v2:1',
+        'ai21.j2-ultra-v1',
+        'cohere.command-text-v14',
+        'meta.llama2-13b-chat-v1'
+      ];
+
+      for (const modelId of validModelIds) {
+        const config: SpendMonitorConfigValidation = {
+          spendThreshold: 10,
+          snsTopicArn: 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts',
+          region: 'us-east-1',
+          bedrockConfig: {
+            enabled: true,
+            modelId,
+            region: 'us-east-1',
+            maxTokens: 1000,
+            temperature: 0.3,
+            costThreshold: 50,
+            rateLimitPerMinute: 10,
+            cacheResults: true,
+            cacheTTLMinutes: 60,
+            fallbackOnError: true
+          }
+        };
+
+        const result = await validator.validateConfiguration(config, { skipAwsValidation: true });
+        expect(result.errors).not.toContain(`Invalid Bedrock model ID format: ${modelId}`);
+      }
+    });
+
+    it('should detect invalid temperature values', async () => {
+      const invalidTemperatures = [-0.1, 1.1, 2.0];
+
+      for (const temperature of invalidTemperatures) {
+        const config: SpendMonitorConfigValidation = {
+          spendThreshold: 10,
+          snsTopicArn: 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts',
+          region: 'us-east-1',
+          bedrockConfig: {
+            enabled: true,
+            modelId: 'amazon.titan-text-express-v1',
+            region: 'us-east-1',
+            maxTokens: 1000,
+            temperature,
+            costThreshold: 50,
+            rateLimitPerMinute: 10,
+            cacheResults: true,
+            cacheTTLMinutes: 60,
+            fallbackOnError: true
+          }
+        };
+
+        const result = await validator.validateConfiguration(config, { skipAwsValidation: true });
+        expect(result.isValid).toBe(false);
+        expect(result.errors).toContain('Bedrock temperature must be a number between 0.0 and 1.0');
+      }
+    });
+
+    it('should validate Bedrock model access when AWS validation is enabled', async () => {
+      const config: SpendMonitorConfigValidation = {
+        spendThreshold: 10,
+        snsTopicArn: 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts',
+        region: 'us-east-1',
+        bedrockConfig: {
+          enabled: true,
+          modelId: 'amazon.titan-text-express-v1',
+          region: 'us-east-1',
+          maxTokens: 1000,
+          temperature: 0.3,
+          costThreshold: 50,
+          rateLimitPerMinute: 10,
+          cacheResults: true,
+          cacheTTLMinutes: 60,
+          fallbackOnError: true
+        }
+      };
+
+      // Mock successful Bedrock response
+      mockBedrockSend.mockResolvedValueOnce({
+        body: new TextEncoder().encode(JSON.stringify({
+          results: [{
+            outputText: 'Test response'
+          }]
+        }))
+      });
+
+      // Mock other AWS services
+      mockSNSSend.mockResolvedValueOnce({
+        Attributes: { DisplayName: 'Test Topic', SubscriptionsConfirmed: '1' }
+      });
+      mockCostExplorerSend.mockResolvedValueOnce({ ResultsByTime: [] });
+
+      const result = await validator.validateConfiguration(config);
+
+      expect(result.isValid).toBe(true);
+      expect(result.info).toContain('Bedrock model access validated successfully');
+      expect(result.info).toContain('Model ID: amazon.titan-text-express-v1');
+      expect(result.info).toContain('Bedrock region: us-east-1');
+      expect(result.info).toContain('Bedrock model response format is valid');
+    });
+
+    it('should handle Bedrock access errors gracefully', async () => {
+      const config: SpendMonitorConfigValidation = {
+        spendThreshold: 10,
+        snsTopicArn: 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts',
+        region: 'us-east-1',
+        bedrockConfig: {
+          enabled: true,
+          modelId: 'amazon.titan-text-express-v1',
+          region: 'us-east-1',
+          maxTokens: 1000,
+          temperature: 0.3,
+          costThreshold: 50,
+          rateLimitPerMinute: 10,
+          cacheResults: true,
+          cacheTTLMinutes: 60,
+          fallbackOnError: true
+        }
+      };
+
+      // Mock Bedrock access denied error
+      mockBedrockSend.mockRejectedValueOnce(new Error('AccessDeniedException: User is not authorized'));
+
+      // Mock other AWS services
+      mockSNSSend.mockResolvedValueOnce({
+        Attributes: { DisplayName: 'Test Topic', SubscriptionsConfirmed: '1' }
+      });
+      mockCostExplorerSend.mockResolvedValueOnce({ ResultsByTime: [] });
+
+      const result = await validator.validateConfiguration(config);
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContain('Bedrock access denied - check IAM permissions for InvokeModel action');
+    });
+  });
 });
 
 describe('validateEnvironmentVariables', () => {
@@ -392,6 +627,33 @@ describe('validateEnvironmentVariables', () => {
     expect(result.info).toContain('Optional environment variable set: CHECK_PERIOD_DAYS');
     expect(result.info).toContain('Optional environment variable set: RETRY_ATTEMPTS');
   });
+
+  it('should detect Bedrock configuration', () => {
+    process.env.SPEND_THRESHOLD = '10';
+    process.env.SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts';
+    process.env.AWS_REGION = 'us-east-1';
+    process.env.BEDROCK_ENABLED = 'true';
+    process.env.BEDROCK_MODEL_ID = 'amazon.titan-text-express-v1';
+    process.env.BEDROCK_REGION = 'us-east-1';
+
+    const result = validateEnvironmentVariables();
+
+    expect(result.isValid).toBe(true);
+    expect(result.info).toContain('Bedrock environment variable set: BEDROCK_ENABLED');
+    expect(result.info).toContain('Bedrock environment variable set: BEDROCK_MODEL_ID');
+    expect(result.info).toContain('Bedrock environment variable set: BEDROCK_REGION');
+  });
+
+  it('should warn when Bedrock is not configured', () => {
+    process.env.SPEND_THRESHOLD = '10';
+    process.env.SNS_TOPIC_ARN = 'arn:aws:sns:us-east-1:123456789012:spend-monitor-alerts';
+    process.env.AWS_REGION = 'us-east-1';
+
+    const result = validateEnvironmentVariables();
+
+    expect(result.isValid).toBe(true);
+    expect(result.warnings).toContain('No Bedrock environment variables configured - AI analysis will be disabled');
+  });
 });
 
 describe('createSampleConfig', () => {
@@ -404,6 +666,9 @@ describe('createSampleConfig', () => {
     expect(sampleConfig.iosConfig).toBeDefined();
     expect(sampleConfig.iosConfig?.bundleId).toBe('com.example.spendmonitor');
     expect(sampleConfig.iosConfig?.sandbox).toBe(true);
+    expect(sampleConfig.bedrockConfig).toBeDefined();
+    expect(sampleConfig.bedrockConfig?.enabled).toBe(true);
+    expect(sampleConfig.bedrockConfig?.modelId).toBe('amazon.titan-text-express-v1');
   });
 
   it('should create configuration that passes validation', async () => {

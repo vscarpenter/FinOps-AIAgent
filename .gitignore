@@ -14,6 +14,11 @@ pids
 coverage/
 *.lcov
 
+#certificates
+certificates/
+*.cer
+
+
 # nyc test coverage
 .nyc_output
 

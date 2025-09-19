@@ -30,7 +30,7 @@ This guide provides step-by-step instructions for setting up iOS push notificati
 4. Click the **+** button to create a new App ID
 5. Fill in the details:
    - **Description**: AWS Spend Monitor
-   - **Bundle ID**: `com.yourcompany.aws-spend-monitor` (use your own domain)
+   - **Bundle ID**: `com.vinny.aws.spendmonitor` (use your own domain)
    - **Capabilities**: Check **Push Notifications**
 6. Click **Continue** and **Register**
 

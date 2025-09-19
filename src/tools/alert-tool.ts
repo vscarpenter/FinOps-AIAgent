@@ -1,6 +1,13 @@
-import { Tool } from '../mock-strands-agent';
+import { Tool } from 'strands-agents';
 import { SNSClient, PublishCommand, PublishCommandInput } from '@aws-sdk/client-sns';
-import { CostAnalysis, AlertContext, ServiceCost, APNSPayload, RetryConfig } from '../types';
+import { 
+  CostAnalysis, 
+  EnhancedCostAnalysis, 
+  AlertContext, 
+  ServiceCost, 
+  APNSPayload, 
+  RetryConfig
+} from '../types';
 import { createLogger } from '../utils/logger';
 import { createMetricsCollector } from '../utils/metrics';
 
@@ -30,7 +37,7 @@ export class AlertTool extends Tool {
    * Sends spend alert to all configured notification channels
    */
   async sendSpendAlert(
-    costAnalysis: CostAnalysis,
+    costAnalysis: CostAnalysis | EnhancedCostAnalysis,
     alertContext: AlertContext,
     topicArn: string,
     iosConfig?: { platformApplicationArn: string; bundleId: string }
@@ -92,9 +99,9 @@ export class AlertTool extends Tool {
   }
 
   /**
-   * Formats alert message for email and general display
+   * Formats alert message for email and general display with AI insights
    */
-  formatAlertMessage(costAnalysis: CostAnalysis, alertContext: AlertContext): string {
+  formatAlertMessage(costAnalysis: CostAnalysis | EnhancedCostAnalysis, alertContext: AlertContext): string {
     const lines = [
       `🚨 AWS Spend Alert - ${alertContext.alertLevel}`,
       '',
@@ -117,37 +124,21 @@ export class AlertTool extends Tool {
       lines.push('');
     }
 
-    let recommendations = [
-      'Review your AWS resources and usage patterns',
-      'Consider scaling down or terminating unused resources',
-      'Check for any unexpected charges or services',
-      'Set up additional CloudWatch alarms for specific services'
-    ];
-
-    if (costAnalysis.insights) {
-      lines.push('🤖 AI Cost Insight:', costAnalysis.insights.summary, '');
-
-      if (costAnalysis.insights.notableFindings.length > 0) {
-        lines.push('📌 Notable Findings:');
-        costAnalysis.insights.notableFindings.forEach(finding => {
-          lines.push(`• ${finding}`);
-        });
-        lines.push('');
+    // Add AI insights if available
+    const enhancedAnalysis = costAnalysis as EnhancedCostAnalysis;
+    if (enhancedAnalysis.aiAnalysis || enhancedAnalysis.anomalies || enhancedAnalysis.recommendations) {
+      const aiInsights = this.formatAIInsights(enhancedAnalysis);
+      if (aiInsights) {
+        lines.push(aiInsights, '');
       }
-
-      if (costAnalysis.insights.recommendedActions.length > 0) {
-        recommendations = costAnalysis.insights.recommendedActions;
-      }
-
-      lines.push(`Model: ${costAnalysis.insights.modelId} (confidence: ${costAnalysis.insights.confidence})`, '');
     }
 
-    lines.push('💡 Recommendations:');
-    recommendations.forEach(recommendation => {
-      lines.push(`• ${recommendation}`);
-    });
-
     lines.push(
+      '💡 General Recommendations:',
+      '• Review your AWS resources and usage patterns',
+      '• Consider scaling down or terminating unused resources',
+      '• Check for any unexpected charges or services',
+      '• Set up additional CloudWatch alarms for specific services',
       '',
       `⏰ Alert generated at: ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC`
     );
@@ -156,28 +147,149 @@ export class AlertTool extends Tool {
   }
 
   /**
-   * Formats a shorter message for SMS delivery
+   * Formats AI insights for structured presentation in alerts
    */
-  formatSMSMessage(costAnalysis: CostAnalysis, alertContext: AlertContext): string {
-    const topService = alertContext.topServices[0];
-    const topServiceText = topService ? ` Top service: ${topService.serviceName} ($${topService.cost.toFixed(2)})` : '';
-    const aiSummary = costAnalysis.insights?.summary ? ` AI: ${this.truncateForSms(costAnalysis.insights.summary, 100)}` : '';
+  formatAIInsights(enhancedAnalysis: EnhancedCostAnalysis): string {
+    const lines: string[] = [];
 
-    return `AWS Spend Alert: $${costAnalysis.totalCost.toFixed(2)} spent (over $${alertContext.threshold} threshold by $${alertContext.exceedAmount.toFixed(2)}).${topServiceText} Projected monthly: $${costAnalysis.projectedMonthly.toFixed(2)}.${aiSummary}`;
+    // Add AI analysis summary and insights
+    if (enhancedAnalysis.aiAnalysis) {
+      const ai = enhancedAnalysis.aiAnalysis;
+      lines.push(
+        '🤖 AI Analysis:',
+        `📊 ${ai.summary}`,
+        ''
+      );
+
+      if (ai.keyInsights && ai.keyInsights.length > 0) {
+        lines.push('🔍 Key Insights:');
+        ai.keyInsights.forEach(insight => {
+          lines.push(`• ${insight}`);
+        });
+        lines.push('');
+      }
+
+      // Add confidence score display
+      const confidencePercentage = Math.round(ai.confidenceScore * 100);
+      const confidenceEmoji = confidencePercentage >= 80 ? '🟢' : confidencePercentage >= 60 ? '🟡' : '🔴';
+      lines.push(`${confidenceEmoji} AI Confidence: ${confidencePercentage}%`);
+      lines.push('');
+    }
+
+    // Add anomaly detection results
+    if (enhancedAnalysis.anomalies && enhancedAnalysis.anomalies.anomaliesDetected) {
+      lines.push('⚠️ Detected Anomalies:');
+      enhancedAnalysis.anomalies.anomalies.forEach((anomaly, index) => {
+        const severityEmoji = anomaly.severity === 'HIGH' ? '🔴' : anomaly.severity === 'MEDIUM' ? '🟡' : '🟢';
+        const confidenceDisplay = Math.round(anomaly.confidenceScore * 100);
+        lines.push(`${index + 1}. ${severityEmoji} ${anomaly.service}: ${anomaly.description} (${confidenceDisplay}% confidence)`);
+        if (anomaly.suggestedAction) {
+          lines.push(`   💡 Action: ${anomaly.suggestedAction}`);
+        }
+      });
+      lines.push('');
+    }
+
+    // Add optimization recommendations
+    if (enhancedAnalysis.recommendations && enhancedAnalysis.recommendations.length > 0) {
+      lines.push('💰 AI Optimization Recommendations:');
+      
+      // Show top 3 recommendations to keep alert concise
+      const topRecommendations = enhancedAnalysis.recommendations
+        .slice(0, 3)
+        .sort((a, b) => {
+          const priorityOrder = { HIGH: 3, MEDIUM: 2, LOW: 1 };
+          return priorityOrder[b.priority] - priorityOrder[a.priority];
+        });
+
+      topRecommendations.forEach((rec, index) => {
+        const priorityEmoji = rec.priority === 'HIGH' ? '🔴' : rec.priority === 'MEDIUM' ? '🟡' : '🟢';
+        const savingsText = rec.estimatedSavings ? ` (Save ~$${rec.estimatedSavings.toFixed(2)}/month)` : '';
+        lines.push(`${index + 1}. ${priorityEmoji} ${rec.service}: ${rec.description}${savingsText}`);
+      });
+
+      // Show total potential savings if available
+      const totalSavings = enhancedAnalysis.recommendations.reduce(
+        (sum, rec) => sum + (rec.estimatedSavings || 0), 0
+      );
+      if (totalSavings > 0) {
+        lines.push(`💵 Total Potential Monthly Savings: $${totalSavings.toFixed(2)}`);
+      }
+      lines.push('');
+    }
+
+    // Add fallback indicator if AI analysis failed
+    if (enhancedAnalysis.fallbackUsed) {
+      lines.push('ℹ️ Note: AI analysis unavailable, using basic cost analysis');
+      lines.push('');
+    }
+
+    return lines.length > 0 ? lines.join('\n') : '';
   }
 
   /**
-   * Formats iOS push notification payload
+   * Formats a shorter message for SMS delivery with AI insights
    */
-  formatIOSPayload(costAnalysis: CostAnalysis, alertContext: AlertContext): APNSPayload {
+  formatSMSMessage(costAnalysis: CostAnalysis | EnhancedCostAnalysis, alertContext: AlertContext): string {
+    const topService = alertContext.topServices[0];
+    const topServiceText = topService ? ` Top service: ${topService.serviceName} ($${topService.cost.toFixed(2)})` : '';
+    
+    let baseMessage = `AWS Spend Alert: $${costAnalysis.totalCost.toFixed(2)} spent (over $${alertContext.threshold} threshold by $${alertContext.exceedAmount.toFixed(2)}).${topServiceText} Projected monthly: $${costAnalysis.projectedMonthly.toFixed(2)}`;
+    
+    // Add concise AI insights for SMS (keep it brief due to SMS length limits)
+    const enhancedAnalysis = costAnalysis as EnhancedCostAnalysis;
+    if (enhancedAnalysis.aiAnalysis && enhancedAnalysis.aiAnalysis.confidenceScore >= 0.7) {
+      // Only add AI insights if confidence is high and we have space
+      const topRecommendation = enhancedAnalysis.recommendations?.[0];
+      if (topRecommendation && topRecommendation.estimatedSavings && topRecommendation.estimatedSavings > 5) {
+        baseMessage += ` AI Tip: ${topRecommendation.description.substring(0, 50)}... (Save ~$${topRecommendation.estimatedSavings.toFixed(0)}/mo)`;
+      }
+    }
+    
+    return baseMessage;
+  }
+
+  /**
+   * Formats iOS push notification payload with AI insights
+   */
+  formatIOSPayload(costAnalysis: CostAnalysis | EnhancedCostAnalysis, alertContext: AlertContext): APNSPayload {
     const topService = alertContext.topServices[0];
     const alertId = `spend-alert-${Date.now()}`;
+    const enhancedAnalysis = costAnalysis as EnhancedCostAnalysis;
+
+    // Create enhanced alert body with AI insights
+    let alertBody = `$${costAnalysis.totalCost.toFixed(2)} spent - $${alertContext.exceedAmount.toFixed(2)} over budget`;
+    
+    // Add AI recommendation to body if available and high confidence
+    if (enhancedAnalysis.aiAnalysis && enhancedAnalysis.aiAnalysis.confidenceScore >= 0.7) {
+      const topRecommendation = enhancedAnalysis.recommendations?.[0];
+      if (topRecommendation && topRecommendation.estimatedSavings && topRecommendation.estimatedSavings > 10) {
+        alertBody += `. AI suggests: ${this.truncateForMobile(topRecommendation.description, 60)} (Save ~$${topRecommendation.estimatedSavings.toFixed(0)}/mo)`;
+      }
+    }
+
+    // Prepare AI insights for custom data
+    const aiInsights = enhancedAnalysis.aiAnalysis ? {
+      summary: this.truncateForMobile(enhancedAnalysis.aiAnalysis.summary, 200),
+      confidenceScore: enhancedAnalysis.aiAnalysis.confidenceScore,
+      keyInsights: enhancedAnalysis.aiAnalysis.keyInsights?.slice(0, 3).map(insight => 
+        this.truncateForMobile(insight, 100)
+      ) || [],
+      hasAnomalies: enhancedAnalysis.anomalies?.anomaliesDetected || false,
+      topRecommendation: enhancedAnalysis.recommendations?.[0] ? {
+        category: enhancedAnalysis.recommendations[0].category,
+        service: enhancedAnalysis.recommendations[0].service,
+        description: this.truncateForMobile(enhancedAnalysis.recommendations[0].description, 150),
+        estimatedSavings: enhancedAnalysis.recommendations[0].estimatedSavings,
+        priority: enhancedAnalysis.recommendations[0].priority
+      } : null
+    } : null;
 
     return {
       aps: {
         alert: {
           title: 'AWS Spend Alert',
-          body: `$${costAnalysis.totalCost.toFixed(2)} spent - $${alertContext.exceedAmount.toFixed(2)} over budget`,
+          body: this.truncateForMobile(alertBody, 200), // iOS has limits on notification length
           subtitle: alertContext.alertLevel === 'CRITICAL' ? 'Critical Budget Exceeded' : 'Budget Threshold Exceeded'
         },
         badge: 1,
@@ -190,18 +302,22 @@ export class AlertTool extends Tool {
         exceedAmount: alertContext.exceedAmount,
         topService: topService?.serviceName || 'Unknown',
         alertId,
-        aiSummary: costAnalysis.insights?.summary,
-        aiConfidence: costAnalysis.insights?.confidence
+        projectedMonthly: costAnalysis.projectedMonthly,
+        aiInsights,
+        fallbackUsed: enhancedAnalysis.fallbackUsed || false,
+        analysisTimestamp: enhancedAnalysis.aiAnalysis?.analysisTimestamp || new Date().toISOString()
       }
     };
   }
 
-  private truncateForSms(value: string, limit: number): string {
-    const normalised = value.replace(/\s+/g, ' ').trim();
-    if (normalised.length <= limit) {
-      return normalised;
+  /**
+   * Truncates text for mobile-friendly display with ellipsis
+   */
+  private truncateForMobile(text: string, maxLength: number): string {
+    if (!text || text.length <= maxLength) {
+      return text;
     }
-    return `${normalised.slice(0, limit - 1)}…`;
+    return text.substring(0, maxLength - 3) + '...';
   }
 
   /**
@@ -418,7 +534,7 @@ export class AlertTool extends Tool {
    * Enhanced alert delivery with comprehensive iOS monitoring
    */
   async sendSpendAlertWithIOSMonitoring(
-    costAnalysis: CostAnalysis,
+    costAnalysis: CostAnalysis | EnhancedCostAnalysis,
     alertContext: AlertContext,
     topicArn: string,
     iosConfig?: { platformApplicationArn: string; bundleId: string }

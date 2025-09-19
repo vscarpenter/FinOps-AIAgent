@@ -114,6 +114,65 @@ describe('End-to-End Integration Tests', () => {
       });
     }, INTEGRATION_TEST_CONFIG.testTimeout);
 
+    it('should enhance cost analysis with AI insights when Bedrock is available', async () => {
+      // Skip if Bedrock integration is not enabled
+      if (!process.env.TEST_BEDROCK_INTEGRATION) {
+        console.log('Skipping AI enhancement test - set TEST_BEDROCK_INTEGRATION=true to enable');
+        return;
+      }
+
+      const agent = new SpendMonitorAgent({
+        ...testConfig,
+        bedrockConfig: {
+          enabled: true,
+          modelId: process.env.TEST_BEDROCK_MODEL_ID || 'amazon.titan-text-express-v1',
+          region: INTEGRATION_TEST_CONFIG.region,
+          maxTokens: 1000,
+          temperature: 0.7,
+          costThreshold: 5.0,
+          rateLimitPerMinute: 3,
+          cacheResults: false,
+          cacheTTLMinutes: 0,
+          fallbackOnError: true
+        }
+      });
+      
+      await agent.initialize();
+
+      const costAnalysisTool = agent.getTool('CostAnalysisTool');
+      expect(costAnalysisTool).toBeDefined();
+
+      // Get enhanced cost analysis with AI
+      const costAnalysis = await costAnalysisTool.getCurrentMonthCosts();
+      const enhancedAnalysis = await costAnalysisTool.enhanceWithAIAnalysis(costAnalysis);
+
+      // Validate enhanced analysis structure
+      expect(enhancedAnalysis).toMatchObject({
+        ...costAnalysis,
+        aiAnalysis: expect.objectContaining({
+          summary: expect.any(String),
+          keyInsights: expect.any(Array),
+          confidenceScore: expect.any(Number),
+          analysisTimestamp: expect.any(String),
+          modelUsed: expect.any(String)
+        })
+      });
+
+      // Validate AI analysis quality
+      expect(enhancedAnalysis.aiAnalysis!.summary.length).toBeGreaterThan(10);
+      expect(enhancedAnalysis.aiAnalysis!.keyInsights.length).toBeGreaterThan(0);
+      expect(enhancedAnalysis.aiAnalysis!.confidenceScore).toBeGreaterThanOrEqual(0);
+      expect(enhancedAnalysis.aiAnalysis!.confidenceScore).toBeLessThanOrEqual(1);
+
+      console.log('AI-enhanced cost analysis completed:', {
+        originalCost: costAnalysis.totalCost,
+        aiSummary: enhancedAnalysis.aiAnalysis!.summary.substring(0, 100) + '...',
+        insightCount: enhancedAnalysis.aiAnalysis!.keyInsights.length,
+        confidence: enhancedAnalysis.aiAnalysis!.confidenceScore,
+        processingTime: enhancedAnalysis.aiProcessingTime
+      });
+    }, 45000);
+
     it('should successfully send SNS notifications to real topic', async () => {
       const agent = new SpendMonitorAgent(testConfig);
       await agent.initialize();

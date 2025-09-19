@@ -386,6 +386,325 @@ export class MetricsCollector {
   }
 
   /**
+   * Records Bedrock AI analysis metrics
+   */
+  async recordBedrockAnalysis(
+    modelId: string,
+    analysisType: string,
+    durationMs: number,
+    success: boolean,
+    tokenCount?: number,
+    cost?: number,
+    confidenceScore?: number
+  ): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'BedrockAnalysisCount',
+        Value: 1,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId },
+          { Name: 'AnalysisType', Value: analysisType },
+          { Name: 'Status', Value: success ? 'Success' : 'Failure' }
+        ],
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockAnalysisDuration',
+        Value: durationMs,
+        Unit: 'Milliseconds',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId },
+          { Name: 'AnalysisType', Value: analysisType }
+        ],
+        Timestamp: new Date()
+      }
+    ];
+
+    if (tokenCount !== undefined) {
+      metrics.push({
+        MetricName: 'BedrockTokenCount',
+        Value: tokenCount,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId },
+          { Name: 'AnalysisType', Value: analysisType }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    if (cost !== undefined) {
+      metrics.push({
+        MetricName: 'BedrockAnalysisCost',
+        Value: cost,
+        Unit: 'None',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId },
+          { Name: 'AnalysisType', Value: analysisType }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    if (confidenceScore !== undefined) {
+      metrics.push({
+        MetricName: 'BedrockConfidenceScore',
+        Value: confidenceScore,
+        Unit: 'None',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId },
+          { Name: 'AnalysisType', Value: analysisType }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records Bedrock cost tracking metrics
+   */
+  async recordBedrockCostTracking(
+    monthlySpend: number,
+    costThreshold: number,
+    callCount: number,
+    rateLimitHits: number = 0
+  ): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'BedrockMonthlySpend',
+        Value: monthlySpend,
+        Unit: 'None',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockCostThreshold',
+        Value: costThreshold,
+        Unit: 'None',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockCallCount',
+        Value: callCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockCostUtilization',
+        Value: (monthlySpend / costThreshold) * 100,
+        Unit: 'Percent',
+        Timestamp: new Date()
+      }
+    ];
+
+    if (rateLimitHits > 0) {
+      metrics.push({
+        MetricName: 'BedrockRateLimitHits',
+        Value: rateLimitHits,
+        Unit: 'Count',
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records Bedrock cache performance metrics
+   */
+  async recordBedrockCacheMetrics(
+    cacheHits: number,
+    cacheMisses: number,
+    cacheSize: number,
+    costSavings?: number
+  ): Promise<void> {
+    const totalRequests = cacheHits + cacheMisses;
+    const hitRate = totalRequests > 0 ? (cacheHits / totalRequests) * 100 : 0;
+
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'BedrockCacheHits',
+        Value: cacheHits,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockCacheMisses',
+        Value: cacheMisses,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockCacheHitRate',
+        Value: hitRate,
+        Unit: 'Percent',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockCacheSize',
+        Value: cacheSize,
+        Unit: 'Count',
+        Timestamp: new Date()
+      }
+    ];
+
+    if (costSavings !== undefined) {
+      metrics.push({
+        MetricName: 'BedrockCacheCostSavings',
+        Value: costSavings,
+        Unit: 'None',
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records Bedrock health check metrics
+   */
+  async recordBedrockHealthCheck(
+    modelId: string,
+    isHealthy: boolean,
+    responseTime?: number,
+    errorType?: string
+  ): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'BedrockHealthCheck',
+        Value: isHealthy ? 1 : 0,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId },
+          { Name: 'Status', Value: isHealthy ? 'Healthy' : 'Unhealthy' }
+        ],
+        Timestamp: new Date()
+      }
+    ];
+
+    if (responseTime !== undefined) {
+      metrics.push({
+        MetricName: 'BedrockHealthCheckResponseTime',
+        Value: responseTime,
+        Unit: 'Milliseconds',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    if (!isHealthy && errorType) {
+      metrics.push({
+        MetricName: 'BedrockHealthCheckError',
+        Value: 1,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'ModelId', Value: modelId },
+          { Name: 'ErrorType', Value: errorType }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records Bedrock anomaly detection metrics
+   */
+  async recordBedrockAnomalyDetection(
+    anomaliesDetected: number,
+    highSeverityCount: number,
+    mediumSeverityCount: number,
+    lowSeverityCount: number,
+    averageConfidence: number
+  ): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'BedrockAnomaliesDetected',
+        Value: anomaliesDetected,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockHighSeverityAnomalies',
+        Value: highSeverityCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockMediumSeverityAnomalies',
+        Value: mediumSeverityCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockLowSeverityAnomalies',
+        Value: lowSeverityCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockAnomalyConfidence',
+        Value: averageConfidence,
+        Unit: 'None',
+        Timestamp: new Date()
+      }
+    ];
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
+   * Records Bedrock optimization recommendations metrics
+   */
+  async recordBedrockOptimizationRecommendations(
+    recommendationCount: number,
+    highPriorityCount: number,
+    estimatedSavings: number,
+    categoryCounts: { [category: string]: number }
+  ): Promise<void> {
+    const metrics: MetricDatum[] = [
+      {
+        MetricName: 'BedrockRecommendationCount',
+        Value: recommendationCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockHighPriorityRecommendations',
+        Value: highPriorityCount,
+        Unit: 'Count',
+        Timestamp: new Date()
+      },
+      {
+        MetricName: 'BedrockEstimatedSavings',
+        Value: estimatedSavings,
+        Unit: 'None',
+        Timestamp: new Date()
+      }
+    ];
+
+    // Record metrics per recommendation category
+    for (const [category, count] of Object.entries(categoryCounts)) {
+      metrics.push({
+        MetricName: 'BedrockRecommendationsByCategory',
+        Value: count,
+        Unit: 'Count',
+        Dimensions: [
+          { Name: 'Category', Value: category }
+        ],
+        Timestamp: new Date()
+      });
+    }
+
+    await this.putMetrics(metrics);
+  }
+
+  /**
    * Sends metrics to CloudWatch
    */
   private async putMetrics(metrics: MetricDatum[]): Promise<void> {

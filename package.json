@@ -12,6 +12,8 @@
     "test:integration:setup": "echo 'Setting up integration test environment...' && npm run build",
     "test:integration:run": "RUN_INTEGRATION_TESTS=true npm run test:integration",
     "test:integration:ios": "RUN_INTEGRATION_TESTS=true TEST_IOS_INTEGRATION=true npm run test:integration",
+    "test:integration:ai": "./scripts/run-ai-integration-tests.sh",
+    "test:integration:ai-performance": "RUN_INTEGRATION_TESTS=true TEST_BEDROCK_INTEGRATION=true RUN_PERFORMANCE_TESTS=true npm run test:integration",
     "test:performance": "RUN_INTEGRATION_TESTS=true jest --config jest.integration.config.js tests/integration/performance.test.ts",
     "test:all": "npm run test:unit && npm run test:integration:run",
     "test:local": "node dist/index.js",
@@ -28,6 +30,7 @@
     "diagram:build": "npx -p @mermaid-js/mermaid-cli mmdc -i docs/architecture.mmd -o docs/architecture.png -b transparent -t forest"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.891.0",
     "@aws-sdk/client-cloudwatch": "^3.888.0",
     "@aws-sdk/client-cost-explorer": "^3.450.0",
     "@aws-sdk/client-dynamodb": "^3.888.0",

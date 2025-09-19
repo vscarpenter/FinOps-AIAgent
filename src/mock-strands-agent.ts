@@ -1,71 +1,71 @@
 /**
- * Mock implementation of AWS Strands Agent for development/demo purposes
- * Replace this with the actual AWS Strands Agent when available
+ * Mock implementation of strands-agents for testing and development
  */
 
-export class Tool {
-  protected logger: any;
-  constructor() {
-    this.logger = console;
-  }
-}
-
-export class Task {
-  constructor() {}
-}
-
 export interface AgentConfig {
+  region?: string;
+  retryAttempts?: number;
   [key: string]: any;
 }
 
 export class Agent {
-  protected tools: Tool[] = [];
-  protected tasks: Task[] = [];
-  protected config: any;
+  protected config: AgentConfig;
+  protected tools: Map<string, Tool> = new Map();
+  protected tasks: Map<string, Task> = new Map();
+  protected logger = {
+    info: (message: string, meta?: any) => console.log(`[INFO] ${message}`, meta || ''),
+    error: (message: string, meta?: any) => console.error(`[ERROR] ${message}`, meta || ''),
+    warn: (message: string, meta?: any) => console.warn(`[WARN] ${message}`, meta || ''),
+    debug: (message: string, meta?: any) => console.debug(`[DEBUG] ${message}`, meta || '')
+  };
 
-  constructor(config: any) {
+  constructor(config: AgentConfig) {
     this.config = config;
   }
-
-  /**
-   * Register a tool with the agent
-   */
+  
   registerTool(tool: Tool): void {
-    this.tools.push(tool);
+    this.tools.set(tool.constructor.name, tool);
   }
-
-  /**
-   * Register a task with the agent
-   */
+  
   registerTask(task: Task): void {
-    this.tasks.push(task);
+    this.tasks.set(task.constructor.name, task);
   }
-
-  /**
-   * Get all registered tools
-   */
+  
   getRegisteredTools(): Tool[] {
-    return [...this.tools];
+    return Array.from(this.tools.values());
   }
-
-  /**
-   * Get all registered tasks
-   */
+  
   getRegisteredTasks(): Task[] {
-    return [...this.tasks];
+    return Array.from(this.tasks.values());
   }
 
-  /**
-   * Initialize method - to be overridden by subclasses
-   */
-  async initialize(): Promise<void> {
-    // Override in subclass
+  getTool(name: string): Tool | undefined {
+    return this.tools.get(name);
   }
 
-  /**
-   * Execute method - to be overridden by subclasses
-   */
-  async execute(): Promise<void> {
-    // Override in subclass
+  getTask(name: string): Task | undefined {
+    return this.tasks.get(name);
   }
+}
+
+export class Tool {
+  protected logger = {
+    info: (message: string, meta?: any) => console.log(`[TOOL INFO] ${message}`, meta || ''),
+    error: (message: string, meta?: any) => console.error(`[TOOL ERROR] ${message}`, meta || ''),
+    warn: (message: string, meta?: any) => console.warn(`[TOOL WARN] ${message}`, meta || ''),
+    debug: (message: string, meta?: any) => console.debug(`[TOOL DEBUG] ${message}`, meta || '')
+  };
+
+  constructor() {}
+}
+
+export class Task {
+  protected logger = {
+    info: (message: string, meta?: any) => console.log(`[TASK INFO] ${message}`, meta || ''),
+    error: (message: string, meta?: any) => console.error(`[TASK ERROR] ${message}`, meta || ''),
+    warn: (message: string, meta?: any) => console.warn(`[TASK WARN] ${message}`, meta || ''),
+    debug: (message: string, meta?: any) => console.debug(`[TASK DEBUG] ${message}`, meta || '')
+  };
+
+  constructor() {}
 }
