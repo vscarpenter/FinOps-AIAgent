@@ -43,7 +43,7 @@
     "aws-cdk-lib": "^2.100.0",
     "constructs": "^10.0.0",
     "@types/jest": "^30.0.0",
-    "@types/node": "^20.0.0",
+    "@types/node": "^24.5.2",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.0.0",
